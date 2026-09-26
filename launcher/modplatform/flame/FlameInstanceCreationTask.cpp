@@ -237,6 +237,11 @@ void FlameCreationTask::executeTask()
                         continue;
                     }
 
+                    // the next version of a file the player turned on or off is left the same way
+                    if (const auto enabled = installedFileEnabled(oldMinecraftDir, version.fileName); enabled.has_value()) {
+                        m_enabledByProject.insert(version.addonId.toInt(), *enabled);
+                    }
+
                     // Only mods stay in the folder they were downloaded to, so look everywhere a file may have been moved to
                     for (const auto& folder : Flame::installFolders()) {
                         scheduleToDelete(m_parent, oldMinecraftDir, FS::PathCombine(folder, version.fileName), true);
@@ -540,13 +545,39 @@ void FlameCreationTask::createInstance()
     m_modIdResolver->start();
 }
 
+std::optional<bool> FlameCreationTask::installedFileEnabled(const QDir& gameRoot, const QString& fileName)
+{
+    for (const auto& folder : Flame::installFolders()) {
+        const auto path = gameRoot.filePath(FS::PathCombine(folder, fileName));
+        if (QFileInfo::exists(path)) {
+            return true;
+        }
+        if (QFileInfo::exists(path + ".disabled")) {
+            return false;
+        }
+    }
+    return std::nullopt;
+}
+
+bool FlameCreationTask::fileEnabled(const Flame::File& file,
+                                    const QHash<int, bool>& enabledByProject,
+                                    const QStringList& selectedOptionalMods)
+{
+    if (const auto enabled = enabledByProject.constFind(file.projectId); enabled != enabledByProject.constEnd()) {
+        return *enabled;
+    }
+    return file.required ||
+           selectedOptionalMods.contains(FS::PathCombine(file.targetFolder, FS::RemoveInvalidPathChars(file.version.fileName)));
+}
+
 void FlameCreationTask::idResolverSucceeded()
 {
     auto results = m_modIdResolver->getResults().files;
 
     QStringList optionalFiles;
     for (auto& result : results) {
-        if (!result.required) {
+        // one whose installed version the player turned on or off stays that way
+        if (!result.required && !m_enabledByProject.contains(result.projectId)) {
             optionalFiles << FS::PathCombine(result.targetFolder, result.version.fileName);
         }
     }
@@ -581,7 +612,7 @@ void FlameCreationTask::idResolverSucceeded()
             auto fileName = result.version.fileName;
             fileName = FS::RemoveInvalidPathChars(fileName);
             auto relpath = FS::PathCombine(result.targetFolder, fileName);
-            blockedMod.disabled = !result.required && !m_selectedOptionalMods.contains(relpath);
+            blockedMod.disabled = !fileEnabled(result, m_enabledByProject, m_selectedOptionalMods);
 
             blockedMods.append(blockedMod);
 
@@ -622,7 +653,7 @@ void FlameCreationTask::setupDownloadJob()
         fileName = FS::RemoveInvalidPathChars(fileName);
         auto relpath = FS::PathCombine(result.targetFolder, fileName);
 
-        if (!result.required && !m_selectedOptionalMods.contains(relpath)) {
+        if (!fileEnabled(result, m_enabledByProject, m_selectedOptionalMods)) {
             relpath += ".disabled";
         }
 

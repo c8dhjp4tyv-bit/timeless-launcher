@@ -120,3 +120,6 @@ ecm_add_test(Overrides_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJ
 
 ecm_add_test(ModrinthUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ModrinthUpdate)
+
+ecm_add_test(FlameUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME FlameUpdate)
