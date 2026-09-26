@@ -239,20 +239,24 @@ std::optional<LogParser::ParsedItem> LogParser::parseLog4J()
 
         auto foundStart = [&]() -> parseOp {
             depth += 1;
-            if (m_parser.qualifiedName().compare("log4j:Message"_L1, Qt::CaseInsensitive) == 0) {
-                QString message;
-                bool messageComplete = false;
+            const bool isMessage = m_parser.qualifiedName().compare("log4j:Message"_L1, Qt::CaseInsensitive) == 0;
+            // the exception logged along with the message, with its stack trace
+            const bool isThrowable = m_parser.qualifiedName().compare("log4j:Throwable"_L1, Qt::CaseInsensitive) == 0;
+            if (isMessage || isThrowable) {
+                const auto element = m_parser.qualifiedName().toString();
+                QString text;
+                bool textComplete = false;
 
-                while (!messageComplete) {
+                while (!textComplete) {
                     auto tok = m_parser.readNext();
 
                     switch (tok) {
                         case QXmlStreamReader::TokenType::Characters: {
-                            message.append(m_parser.text());
+                            text.append(m_parser.text());
                         } break;
                         case QXmlStreamReader::TokenType::EndElement: {
-                            if (m_parser.qualifiedName().compare("log4j:Message"_L1, Qt::CaseInsensitive) == 0) {
-                                messageComplete = true;
+                            if (m_parser.qualifiedName().compare(element, Qt::CaseInsensitive) == 0) {
+                                textComplete = true;
                             }
                         } break;
                         case QXmlStreamReader::TokenType::EndDocument: {
@@ -268,8 +272,16 @@ std::optional<LogParser::ParsedItem> LogParser::parseLog4J()
                     }
                 }
 
-                entry.message = message;
-                foundMessage = true;
+                if (isMessage) {
+                    entry.message = text;
+                    foundMessage = true;
+                } else {
+                    // log4j ends it with a line break
+                    while (text.endsWith('\n')) {
+                        text.chop(1);
+                    }
+                    entry.throwable = text;
+                }
                 depth -= 1;
             }
             return noOp;
