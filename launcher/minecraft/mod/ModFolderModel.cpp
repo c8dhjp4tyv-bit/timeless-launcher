@@ -374,6 +374,27 @@ void ModFolderModel::onUpdateSucceeded()
     updateDuplicates();
 }
 
+QList<QStringList> ModFolderModel::duplicateGroups(ModPlatform::ModLoaderTypes loaders)
+{
+    QMap<QString, QStringList> byId;
+    for (auto* mod : allMods()) {
+        // as for duplicatesOf(), a mod whose loaders aren't known may be read by any of them
+        const auto modLoaders = mod->details().loaders;
+        if (mod->enabled() && !mod->mod_id().isEmpty() && (!modLoaders || modLoaders.testAnyFlags(loaders))) {
+            byId[mod->mod_id()] << mod->fileinfo().fileName();
+        }
+    }
+
+    QList<QStringList> groups;
+    for (auto& group : byId) {
+        if (group.size() > 1) {
+            group.sort();
+            groups << group;
+        }
+    }
+    return groups;
+}
+
 void ModFolderModel::updateDuplicates()
 {
     QHash<QString, QList<Mod*>> byId;

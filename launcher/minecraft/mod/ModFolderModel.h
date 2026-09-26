@@ -106,6 +106,9 @@ class ModFolderModel : public ResourceFolderModel {
      */
     QStringList duplicatesOf(const QString& internalId) const { return m_duplicates.value(internalId); }
 
+    /** The file names of each set of enabled mods that share a mod ID and would all be read by one of these loaders */
+    QList<QStringList> duplicateGroups(ModPlatform::ModLoaderTypes loaders);
+
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;
     void onParseFinished();

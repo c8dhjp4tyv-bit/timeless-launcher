@@ -94,6 +94,9 @@ class DuplicateModsTest : public QObject {
         // two versions of one mod, left behind by an update
         QVERIFY(writeFabricMod(mods.filePath("sodium-1.0.jar"), "sodium"));
         QVERIFY(writeFabricMod(mods.filePath("sodium-1.1.jar"), "sodium"));
+        // the same for a Forge mod
+        QVERIFY(writeForgeMod(mods.filePath("create-0.5.jar"), "create"));
+        QVERIFY(writeForgeMod(mods.filePath("create-0.6.jar"), "create"));
         // each loader only reads its own build, so these can sit side by side
         QVERIFY(writeFabricMod(mods.filePath("jei-fabric.jar"), "jei"));
         QVERIFY(writeForgeMod(mods.filePath("jei-forge.jar"), "jei"));
@@ -103,14 +106,23 @@ class DuplicateModsTest : public QObject {
 
         ModFolderModel model(mods.path(), nullptr, false, false);
         QVERIFY2(load(model), "The mods were never all read.");
-        QCOMPARE(model.rowCount(), 6);
+        QCOMPARE(model.rowCount(), 8);
 
         QCOMPARE(model.duplicatesOf("sodium-1.0.jar"), QStringList{ "sodium-1.1.jar" });
         QCOMPARE(model.duplicatesOf("sodium-1.1.jar"), QStringList{ "sodium-1.0.jar" });
+        QCOMPARE(model.duplicatesOf("create-0.5.jar"), QStringList{ "create-0.6.jar" });
         QVERIFY(model.duplicatesOf("jei-fabric.jar").isEmpty());
         QVERIFY(model.duplicatesOf("jei-forge.jar").isEmpty());
         QVERIFY(model.duplicatesOf("lithium-1.1.jar").isEmpty());
         QVERIFY(model.duplicatesOf("lithium-1.0.jar.disabled").isEmpty());
+
+        // a loader only trips over the copies it reads
+        const QList<QStringList> sodium{ QStringList{ "sodium-1.0.jar", "sodium-1.1.jar" } };
+        const QList<QStringList> create{ QStringList{ "create-0.5.jar", "create-0.6.jar" } };
+        QCOMPARE(model.duplicateGroups(ModPlatform::Fabric), sodium);
+        QCOMPARE(model.duplicateGroups(ModPlatform::Quilt), sodium);
+        QCOMPARE(model.duplicateGroups(ModPlatform::Forge), create);
+        QCOMPARE(model.duplicateGroups(ModPlatform::NeoForge), create);
 
         // disabling one of the pair settles it right away
         auto oldSodium = indexOf(model, "sodium-1.0.jar");
@@ -118,6 +130,8 @@ class DuplicateModsTest : public QObject {
         QVERIFY(model.setResourceEnabled({ oldSodium }, EnableAction::DISABLE));
         QVERIFY(model.duplicatesOf("sodium-1.1.jar").isEmpty());
         QVERIFY(model.duplicatesOf("sodium-1.0.jar.disabled").isEmpty());
+        QVERIFY(model.duplicateGroups(ModPlatform::Fabric).isEmpty());
+        QCOMPARE(model.duplicateGroups(ModPlatform::Forge), create);
     }
 };
 

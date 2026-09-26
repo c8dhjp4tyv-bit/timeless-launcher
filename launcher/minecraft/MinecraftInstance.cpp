@@ -56,6 +56,7 @@
 #include "launch/steps/TextPrint.h"
 
 #include "minecraft/launch/AutoInstallJava.h"
+#include "minecraft/launch/CheckDuplicateMods.h"
 #include "minecraft/launch/ClaimAccount.h"
 #include "minecraft/launch/CreateGameFolders.h"
 #include "minecraft/launch/EnsureAvailableMemory.h"
@@ -1215,6 +1216,11 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
     // Scan mods folders for mods
     {
         process->appendStep(makeShared<ScanModFolders>(pptr));
+    }
+
+    // two copies of one mod stop the game from starting, so say so before it gets that far
+    {
+        process->appendStep(makeShared<CheckDuplicateMods>(pptr));
     }
 
     // make sure we have enough RAM, warn the user if we don't
