@@ -44,7 +44,13 @@
 #include "InfoFrame.h"
 #include "ui_InfoFrame.h"
 
+#include "DesktopServices.h"
 #include "ui/dialogs/CustomMessageBox.h"
+
+namespace {
+// the link that an elided description or license ends with, to show all of it
+const QString g_showAllLink = QStringLiteral("#mod_desc");
+}  // namespace
 
 void setupLinkToolTip(QLabel* label)
 {
@@ -68,6 +74,13 @@ InfoFrame::InfoFrame(QWidget* parent) : QFrame(parent), ui(new Ui::InfoFrame)
     setupLinkToolTip(ui->nameLabel);
     setupLinkToolTip(ui->licenseLabel);
     setupLinkToolTip(ui->issueTrackerLabel);
+
+    // These two may end in a link that shows the rest of them, so they open their other links themselves.
+    ui->descriptionLabel->setOpenExternalLinks(false);
+    ui->licenseLabel->setOpenExternalLinks(false);
+    connect(ui->descriptionLabel, &QLabel::linkActivated, this, &InfoFrame::descriptionEllipsisHandler);
+    connect(ui->licenseLabel, &QLabel::linkActivated, this, &InfoFrame::licenseEllipsisHandler);
+
     updateHiddenState();
 }
 
@@ -313,7 +326,6 @@ void InfoFrame::setDescription(QString text)
     doc.setHtml(text);
 
     if (doc.characterCount() > maxCharacterElide) {
-        ui->descriptionLabel->setOpenExternalLinks(false);
         ui->descriptionLabel->setTextFormat(Qt::TextFormat::RichText);  // This allows injecting HTML here.
         m_description = text;
 
@@ -324,10 +336,9 @@ void InfoFrame::setDescription(QString text)
         cursor.removeSelectedText();
 
         // insert the post fix at the cursor
-        cursor.insertHtml("<a href=\"#mod_desc\">...</a>");
+        cursor.insertHtml(QString("<a href=\"%1\">...</a>").arg(g_showAllLink));
 
         labeltext.append(doc.toHtml());
-        connect(ui->descriptionLabel, &QLabel::linkActivated, this, &InfoFrame::descriptionEllipsisHandler);
     } else {
         ui->descriptionLabel->setTextFormat(Qt::TextFormat::AutoText);
         labeltext.append(finaltext);
@@ -361,12 +372,10 @@ void InfoFrame::setLicense(QString text)
     QString labeltext;
     labeltext.reserve(300);
     if (finaltext.length() > 290) {
-        ui->licenseLabel->setOpenExternalLinks(false);
         ui->licenseLabel->setTextFormat(Qt::TextFormat::RichText);
         m_license = text;
         // This allows injecting HTML here.
-        labeltext.append("<html><body>" + finaltext.left(287) + "<a href=\"#mod_desc\">...</a></body></html>");
-        connect(ui->licenseLabel, &QLabel::linkActivated, this, &InfoFrame::licenseEllipsisHandler);
+        labeltext.append("<html><body>" + finaltext.left(287) + QString("<a href=\"%1\">...</a></body></html>").arg(g_showAllLink));
     } else {
         ui->licenseLabel->setTextFormat(Qt::TextFormat::AutoText);
         labeltext.append(finaltext);
@@ -395,8 +404,12 @@ void InfoFrame::setImage(QPixmap img)
     }
 }
 
-void InfoFrame::descriptionEllipsisHandler([[maybe_unused]] QString link)
+void InfoFrame::descriptionEllipsisHandler(QString link)
 {
+    if (link != g_showAllLink) {
+        DesktopServices::openUrl(QUrl(link));
+        return;
+    }
     if (!m_current_box) {
         m_current_box = CustomMessageBox::selectable(this, "", m_description);
         connect(m_current_box, &QMessageBox::finished, this, &InfoFrame::boxClosed);
@@ -406,8 +419,12 @@ void InfoFrame::descriptionEllipsisHandler([[maybe_unused]] QString link)
     }
 }
 
-void InfoFrame::licenseEllipsisHandler([[maybe_unused]] QString link)
+void InfoFrame::licenseEllipsisHandler(QString link)
 {
+    if (link != g_showAllLink) {
+        DesktopServices::openUrl(QUrl(link));
+        return;
+    }
     if (!m_current_box) {
         m_current_box = CustomMessageBox::selectable(this, "", m_license);
         connect(m_current_box, &QMessageBox::finished, this, &InfoFrame::boxClosed);
