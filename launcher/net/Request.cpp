@@ -210,7 +210,8 @@ void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
 
     QString dlSpeedStr;
     if (elapsedMs.count() > 0) {
-        auto strEta = bytesTotal > 0 ? Time::humanReadableDuration(remainingTimeS) : tr("unknown");
+        // until the first bytes arrive the speed is 0 and the remaining time can't be estimated
+        auto strEta = bytesTotal > 0 && dlSpeedBps > 0 ? Time::humanReadableDuration(remainingTimeS) : tr("unknown");
         //: Download speed, in bytes per second (remaining download time in parenthesis)
         dlSpeedStr = tr("%1 /s (%2)").arg(StringUtils::humanReadableFileSize(dlSpeedBps)).arg(strEta);
     } else {
