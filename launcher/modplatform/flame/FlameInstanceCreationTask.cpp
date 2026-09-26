@@ -183,10 +183,10 @@ void FlameCreationTask::executeTask()
 
         // We will remove all the previous overrides, to prevent duplicate files!
         // TODO: Currently 'overrides' will always override the stuff on update. How do we preserve unchanged overrides?
-        // FIXME: We may want to do something about disabled mods.
+        // The player may have turned off a mod among them, so that copy goes too, and the update's is turned off in turn.
         auto oldOverrides = Override::readOverrides("overrides", oldIndexFolder);
         for (const auto& entry : oldOverrides) {
-            scheduleToDelete(m_parent, oldMinecraftDir, entry);
+            scheduleToDelete(m_parent, oldMinecraftDir, entry, true);
         }
 
         // Nothing was replaced or removed, so there are no old files to look up
@@ -396,10 +396,14 @@ void FlameCreationTask::createInstance()
         }
     }
 
-    // an update keeps the player's game options
+    // an update keeps the player's game options, and the mods the pack comes with on or off as the player has them
     const auto* oldInstance = m_oldInstance.value_or(nullptr);
     Override::keepGameOptions(FS::PathCombine(m_stagingPath, "minecraft"), parentFolder, oldInstance ? oldInstance->gameRoot() : QString(),
                               oldInstance ? FS::PathCombine(oldInstance->instanceRoot(), "flame") : QString());
+    if (oldInstance != nullptr) {
+        Override::keepEnabledStates(FS::PathCombine(m_stagingPath, "minecraft"), Override::readOverrides("overrides", parentFolder),
+                                    oldInstance->gameRoot());
+    }
 
     if (!promptForUntrustedMods()) {
         emitAborted();

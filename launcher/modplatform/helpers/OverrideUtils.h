@@ -17,6 +17,14 @@ void createOverrides(const QString& name, const QString& parent_folder, const QS
  */
 QStringList readOverrides(const QString& name, const QString& parent_folder);
 
+/** Turns the overrides of an update of a pack on or off as the player has the files with the same paths.
+ *
+ *  `game_root` is the game folder the update is being put together in, with its overrides in place, and `overrides` their
+ *  paths in it. `old_game_root` is the game folder of the installed instance, where the player may have turned off one of the
+ *  pack's mods by adding .disabled to its name, or turned on one the pack comes with turned off.
+ */
+void keepEnabledStates(const QString& game_root, const QStringList& overrides, const QString& old_game_root);
+
 /** Merges the player's game options into the ones an update of a pack comes with, and returns the result.
  *
  *  Each is the text of an options.txt: `player` the one the game saved, `newPack` the one the update comes with, and

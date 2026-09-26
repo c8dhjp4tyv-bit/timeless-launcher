@@ -1,9 +1,11 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
 #include <QByteArray>
 #include <QCryptographicHash>
+#include <QDir>
 #include <QQueue>
 #include <QString>
 #include <QUrl>
@@ -16,6 +18,7 @@ class Resource;
 
 class ModrinthCreationTask final : public InstanceTask {
     Q_OBJECT
+   public:
     struct File {
         QString path;
 
@@ -25,7 +28,14 @@ class ModrinthCreationTask final : public InstanceTask {
         bool required = true;
     };
 
-   public:
+    /** Turns each file of an update of a pack on or off as the player has the installed file it replaces.
+     *
+     *  `installed` are the files of the installed version that the update replaces or drops, and `update` the ones it
+     *  downloads; `gameRoot` is the game folder of the instance. A file replaces one from the same Modrinth project, going by
+     *  their download addresses, or else one with the same path.
+     */
+    static void keepEnabledStates(const std::vector<File>& installed, std::vector<File>& update, const QDir& gameRoot);
+
     ModrinthCreationTask(const QString& stagingPath,
                          bool trustedSource,
                          SettingsObject* globalSettings,

@@ -66,6 +66,30 @@ QStringList readOverrides(const QString& name, const QString& parent_folder)
     return previous_overrides;
 }
 
+void keepEnabledStates(const QString& game_root, const QStringList& overrides, const QString& old_game_root)
+{
+    const QDir game(game_root);
+    const QDir oldGame(old_game_root);
+    for (const auto& entry : overrides) {
+        if (entry.isEmpty()) {
+            continue;
+        }
+        const auto path = entry.endsWith(".disabled") ? entry.chopped(9) : entry;
+        QString wanted;
+        if (QFileInfo::exists(oldGame.filePath(path))) {
+            wanted = path;
+        } else if (QFileInfo::exists(oldGame.filePath(path + ".disabled"))) {
+            wanted = path + ".disabled";
+        }
+        if (wanted.isEmpty() || wanted == entry || !QFileInfo::exists(game.filePath(entry)) || QFileInfo::exists(game.filePath(wanted))) {
+            continue;
+        }
+        if (!QFile::rename(game.filePath(entry), game.filePath(wanted))) {
+            qWarning() << "Could not turn" << entry << "on or off as the player had it";
+        }
+    }
+}
+
 namespace {
 
 /// The lines of an options.txt, which the game writes with the line breaks of the system it runs on

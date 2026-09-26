@@ -61,6 +61,33 @@ class OverridesTest : public QObject {
         QCOMPARE(listed, files);
     }
 
+    void keepEnabledStates()
+    {
+        const QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QDir game(FS::PathCombine(root.path(), "staging", "minecraft"));
+        const QDir oldGame(FS::PathCombine(root.path(), "instance", "minecraft"));
+        // the update's overrides, one of them a mod the pack comes with turned off
+        const QStringList overrides{ "mods/custom.jar", "mods/extra.jar.disabled", "mods/kept.jar", "config/a.toml", "mods/new.jar" };
+        for (const auto& file : overrides) {
+            FS::write(game.filePath(file), "");
+        }
+        // the player turned the first one off and the second one on
+        for (const auto* file : { "mods/custom.jar.disabled", "mods/extra.jar", "mods/kept.jar", "config/a.toml" }) {
+            FS::write(oldGame.filePath(file), "");
+        }
+
+        Override::keepEnabledStates(game.path(), overrides, oldGame.path());
+
+        QStringList files;
+        for (const auto& folder : { "mods", "config" }) {
+            for (const auto& file : QDir(game.filePath(folder)).entryList(QDir::Files, QDir::Name)) {
+                files << QString(folder) + '/' + file;
+            }
+        }
+        QCOMPARE(files, QStringList({ "mods/custom.jar.disabled", "mods/extra.jar", "mods/kept.jar", "mods/new.jar", "config/a.toml" }));
+    }
+
     void mergeGameOptions_data()
     {
         QTest::addColumn<QString>("player");
