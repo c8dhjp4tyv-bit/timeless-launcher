@@ -105,3 +105,6 @@ ecm_add_test(LoggedProcess_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION
 
 ecm_add_test(ExtractZip_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ExtractZip)
+
+ecm_add_test(ServerStatus_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ServerStatus)

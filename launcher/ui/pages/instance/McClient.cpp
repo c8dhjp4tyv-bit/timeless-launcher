@@ -53,6 +53,7 @@ void McClient::sendRequest()
 
     writeVarInt(data, 0x00);    // packet ID
     writePacketToSocket(data);  // send status packet
+    m_requestTimer.start();
 }
 
 void McClient::readRawResponse()
@@ -61,6 +62,9 @@ void McClient::readRawResponse()
         return;
     }
 
+    if (m_latency < 0 && m_requestTimer.isValid()) {
+        m_latency = m_requestTimer.elapsed();
+    }
     m_resp.append(m_socket.readAll());
     if (m_responseReadState == ResponseReadState::Waiting && m_resp.size() >= 5) {
         // whatever the other end sends, it must not throw out of the slot

@@ -172,6 +172,7 @@ class McClientTest : public QObject {
         QCOMPARE(succeeded.count(), 1);
         const auto status = succeeded.first().first().toJsonObject();
         QCOMPARE(status["players"].toObject()["online"].toInt(), 5);
+        QVERIFY(client.latency() >= 0);
 
         const auto handshake = receivedHandshake();
         QCOMPARE(handshake.protocolVersion, 763);
