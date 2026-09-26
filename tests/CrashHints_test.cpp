@@ -126,6 +126,47 @@ class CrashHintsTest : public QObject {
         QTest::newRow("two causes") << "Unrecognized VM option 'ZGenerational'\n"
                                        "java.lang.OutOfMemoryError: Java heap space\n"
                                     << 17 << QList<QStringList>{ { "ZGenerational" }, { "ran out of memory" } };
+
+        QTest::newRow("Fabric with a solution")
+            << "[12:00:00] [main/ERROR]: Incompatible mods found!\n"
+               "net.fabricmc.loader.impl.FormattedException: Some of your mods are incompatible with the game or each other!\n"
+               "A potential solution has been determined, this may resolve your problem:\n"
+               "\t - Install fabric-api, version 0.92.2 or later.\n"
+               "\t - Replace 'Sodium' (sodium) 0.4.10 with version 0.5.4 or later.\n"
+               "More details:\n"
+               "\t - Mod 'Sodium Extra' (sodium-extra) 0.5.4 requires version 0.5.4 or later of mod 'Sodium' (sodium), but only the "
+               "wrong version is present: 0.4.10!\n"
+            << 17
+            << QList<QStringList>{ { "It suggests: Install fabric-api, version 0.92.2 or later. Replace 'Sodium' (sodium) 0.4.10 with "
+                                     "version 0.5.4 or later." } };
+
+        QTest::newRow("Fabric without a solution")
+            << "net.fabricmc.loader.impl.FormattedException: Mod resolution encountered an incompatible mod set!\n"
+               "\t - Mod 'Iris' (iris) 1.6.4 requires any version of sodium, which is missing!\n"
+            << 17 << QList<QStringList>{ { "can't load these mods together", "which mod needs what" } };
+
+        QTest::newRow("Forge dependencies")
+            << "[main/ERROR] [net.minecraftforge.fml.loading.ModSorter/LOADING]: Missing or unsupported mandatory dependencies:\n"
+               "\tMod ID: 'architectury', Requested by: 'roughlyenoughitems', Expected range: '[9.1.12,)', Actual version: "
+               "'[MISSING]'\n"
+               "\tMod ID: 'cloth_config', Requested by: 'roughlyenoughitems', Expected range: '[11.1.106,)', Actual version: "
+               "'11.0.99'\n"
+            << 17
+            << QList<QStringList>{ { "architectury (roughlyenoughitems needs it)",
+                                     "cloth_config 11.0.99 (roughlyenoughitems needs [11.1.106,))" } };
+
+        QTest::newRow("mixin of a named mod")
+            << "[12:00:00] [main/ERROR]: Mixin apply for mod iris failed iris.mixins.json:MixinGameRenderer from mod iris -> "
+               "net.minecraft.class_757: org.spongepowered.asm.mixin.injection.throwables.InvalidInjectionException: Critical "
+               "injection failure\n"
+               "Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [iris.mixins.json:MixinGameRenderer] from "
+               "phase [DEFAULT] in config [iris.mixins.json] FAILED during APPLY\n"
+            << 17 << QList<QStringList>{ { "The mod iris couldn't make its changes" } };
+
+        QTest::newRow("mixin config only")
+            << "Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [sodium.mixins.json:core.MixinWindow] from "
+               "phase [DEFAULT] in config [sodium.mixins.json] FAILED during APPLY\n"
+            << 17 << QList<QStringList>{ { "the mixins in sodium.mixins.json" } };
     }
 
     void find()

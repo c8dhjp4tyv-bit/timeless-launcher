@@ -142,5 +142,57 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
             "the latest graphics driver may help; a very old graphics card can only run older versions of Minecraft.");
     }
 
+    // Mods the mod loader can't load, as it explains it
+
+    // Fabric and Quilt, which also work out what to change when they can
+    static const QRegularExpression s_incompatibleMods(
+        "Mod resolution encountered an incompatible mod set!|Some of your mods are incompatible with the game or each other!");
+    if (log.contains(s_incompatibleMods)) {
+        QStringList suggestions;
+        if (const auto solution = log.indexOf("A potential solution has been determined"); solution >= 0) {
+            const auto lines = log.mid(solution).split('\n');
+            for (auto it = lines.begin() + 1; it != lines.end() && it->trimmed().startsWith("- "); ++it) {
+                suggestions << it->trimmed().mid(2);
+            }
+        }
+        if (!suggestions.isEmpty()) {
+            hints << tr("The mod loader can't load these mods together. It suggests: %1").arg(suggestions.join(' '));
+        } else {
+            hints << tr("The mod loader can't load these mods together. The log above says which mod needs what.");
+        }
+    }
+
+    // Forge and NeoForge list each dependency they can't satisfy
+    static const QRegularExpression s_unmetDependency(
+        R"(Mod ID: '([^']+)', Requested by: '([^']+)', Expected range: '([^']*)', Actual version: '([^']*)')");
+    QStringList unmet;
+    for (auto matches = s_unmetDependency.globalMatch(log); matches.hasNext();) {
+        const auto match = matches.next();
+        const auto entry = match.captured(4) == "[MISSING]"
+                               ? tr("%1 (%2 needs it)").arg(match.captured(1), match.captured(2))
+                               : tr("%1 %3 (%2 needs %4)").arg(match.captured(1), match.captured(2), match.captured(4), match.captured(3));
+        if (!unmet.contains(entry)) {
+            unmet << entry;
+        }
+    }
+    if (!unmet.isEmpty()) {
+        hints << tr("Some mods need other mods that are missing or in a version they can't use: %1. Install or update those.")
+                     .arg(unmet.join(", "));
+    }
+
+    // A mod that failed to change the game's code, usually because it was made for another version of the game
+    static const QRegularExpression s_mixinFailedForMod(R"(Mixin apply for mod ([\w.-]+) failed)");
+    static const QRegularExpression s_mixinFailedInConfig(R"(in config \[([^\]]+)\] FAILED during)");
+    if (const auto mixin = s_mixinFailedForMod.match(log); mixin.hasMatch()) {
+        hints << tr("The mod %1 couldn't make its changes to the game's code. It may not be made for this version of Minecraft or "
+                    "of the mod loader, or another mod clashes with it: update it, or take it out to see whether the game starts.")
+                     .arg(mixin.captured(1));
+    } else if (const auto config = s_mixinFailedInConfig.match(log); config.hasMatch()) {
+        hints << tr("A mod couldn't make its changes to the game's code (the mixins in %1). It may not be made for this version "
+                    "of Minecraft or of the mod loader, or another mod clashes with it: update it, or take it out to see whether "
+                    "the game starts.")
+                     .arg(config.captured(1));
+    }
+
     return hints;
 }
