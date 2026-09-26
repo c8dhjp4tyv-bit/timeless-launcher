@@ -54,8 +54,9 @@ auto ExtractZipTask::extractZip() -> ZipResult
     ZipResult result;
     auto fileName = m_input.getZipName();
     if (!m_input.parse([this, &result, &target, &target_top_dir, ext, &extracted](ArchiveReader::File* f) {
-            if (m_zipFuture.isCanceled())
+            if (m_abortRequested) {
                 return false;
+            }
             setProgress(m_progress + 1, m_progressTotal);
             QString file_name = f->filename();
             if (!file_name.startsWith(m_subdirectory)) {
@@ -124,6 +125,7 @@ void ExtractZipTask::finish()
 bool ExtractZipTask::abort()
 {
     if (m_zipFuture.isRunning()) {
+        m_abortRequested = true;
         m_zipFuture.cancel();
         // NOTE: Here we don't do `emitAborted()` because it will be done when `m_build_zip_future` actually cancels, which may not occur
         // immediately.

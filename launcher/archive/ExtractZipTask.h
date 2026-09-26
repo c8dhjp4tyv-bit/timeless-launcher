@@ -20,6 +20,7 @@
 #include <QDir>
 #include <QFuture>
 #include <QFutureWatcher>
+#include <atomic>
 #include "archive/ArchiveReader.h"
 #include "tasks/Task.h"
 
@@ -49,5 +50,8 @@ class ExtractZipTask : public Task {
 
     QFuture<ZipResult> m_zipFuture;
     QFutureWatcher<ZipResult> m_zipWatcher;
+    // What the worker checks to stop early. It can't ask m_zipFuture: that is only assigned once QtConcurrent::run has
+    // returned, so the worker may get to it first, and until then it reads as canceled.
+    std::atomic_bool m_abortRequested{ false };
 };
 }  // namespace MMCZip
