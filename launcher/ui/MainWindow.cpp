@@ -997,11 +997,20 @@ void MainWindow::processURLs(QList<QUrl> urls)
                 });
                 connect(job.get(), &Task::succeeded, this, [this, array, addonId, fileId, &dl_url, &version] {
                     qDebug() << "Returned CFURL Json:\n" << array->toStdString().c_str();
-                    auto doc = Json::requireDocument(*array);
-                    auto data = doc.object()["data"].toObject();
-                    // No way to find out if it's a mod or a modpack before here
-                    // And also we need to check if it ends with .zip, instead of any better way
-                    version = FlameMod::loadIndexedPackVersion(data);
+                    try {
+                        auto doc = Json::requireDocument(*array);
+                        auto data = doc.object()["data"].toObject();
+                        // No way to find out if it's a mod or a modpack before here
+                        // And also we need to check if it ends with .zip, instead of any better way
+                        version = FlameMod::loadIndexedPackVersion(data);
+                    } catch (const Json::JsonException& e) {
+                        // an exception must not leave a slot, it would take the whole launcher down with it
+                        CustomMessageBox::selectable(this, tr("Error"),
+                                                     tr("Could not read the file's details from CurseForge:\n%1").arg(e.cause()),
+                                                     QMessageBox::Critical)
+                            ->show();
+                        return;
+                    }
                     auto fileName = version.fileName;
 
                     // Have to use ensureString then use QUrl to get proper url encoding
