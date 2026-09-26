@@ -390,6 +390,13 @@ bool overrideFolder(QString overwritten_path, QString override_path);
  */
 QString createShortcut(QString destination, QString target, QStringList args, QString name, QString icon);
 
+/// A command line as the Exec key of a desktop entry, which is read as a string, then for field codes such as %f, then as a
+/// command line, has to hold it
+QString desktopEntryExec(const QString& program, const QStringList& args);
+
+/// A command line as a POSIX shell has to be given it
+QString shellCommand(const QString& program, const QStringList& args);
+
 enum class FilesystemType {
     FAT,
     NTFS,

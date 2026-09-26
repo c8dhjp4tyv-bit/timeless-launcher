@@ -1019,6 +1019,34 @@ QString quoteArgs(const QStringList& args, const QString& wrap, const QString& e
     return result;
 }
 
+QString desktopEntryExec(const QString& program, const QStringList& args)
+{
+    QStringList quoted;
+    for (auto arg : QStringList{ program } + args) {
+        // In double quotes, which leave a single quote alone, a backslash goes before these
+        for (const QChar c : { '\\', '"', '`', '$' }) {
+            arg.replace(c, QString('\\') + c);
+        }
+        arg = '"' + arg + '"';
+        // % starts a field code
+        arg.replace('%', "%%");
+        // and the value is a string, whose backslashes need one more each
+        arg.replace('\\', "\\\\");
+        quoted << arg;
+    }
+    return quoted.join(' ');
+}
+
+QString shellCommand(const QString& program, const QStringList& args)
+{
+    QStringList quoted;
+    for (auto arg : QStringList{ program } + args) {
+        // nothing is special in single quotes, and a single quote ends them
+        quoted << '\'' + arg.replace('\'', "'\\''") + '\'';
+    }
+    return quoted.join(' ');
+}
+
 // Cross-platform Shortcut creation
 QString createShortcut(QString destination, QString target, QStringList args, QString name, QString icon)
 {
@@ -1068,10 +1096,8 @@ QString createShortcut(QString destination, QString target, QStringList args, QS
     }
     QTextStream stream(&f);
 
-    auto argstring = quoteArgs(args, "\"", "\\\"");
-
     stream << "#!/bin/bash" << "\n";
-    stream << "\"" << target << "\" " << argstring << "\n";
+    stream << shellCommand(target, args) << "\n";
 
     stream.flush();
     f.close();
@@ -1113,12 +1139,10 @@ QString createShortcut(QString destination, QString target, QStringList args, QS
     }
     QTextStream stream(&f);
 
-    auto argstring = quoteArgs(args, "'", "'\\''");
-
     stream << "[Desktop Entry]" << "\n";
     stream << "Type=Application" << "\n";
     stream << "Categories=Game;ActionGame;AdventureGame;Simulation" << "\n";
-    stream << "Exec=\"" << target.toLocal8Bit() << "\" " << argstring.toLocal8Bit() << "\n";
+    stream << "Exec=" << desktopEntryExec(target, args).toLocal8Bit() << "\n";
     stream << "Name=" << name.toLocal8Bit() << "\n";
     if (!icon.isEmpty()) {
         stream << "Icon=" << icon.toLocal8Bit() << "\n";

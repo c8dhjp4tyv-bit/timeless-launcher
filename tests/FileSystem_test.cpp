@@ -1,4 +1,5 @@
 #include <QDir>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
@@ -364,6 +365,32 @@ class FileSystemTest : public QObject {
     }
 
     void test_getDesktop() { QCOMPARE(FS::getDesktopDir(), QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)); }
+
+    // In the expected results, ~ stands for a double quote, which moc can't take in a raw string literal.
+
+    void test_desktopEntryExec()
+    {
+        // world names, which shortcuts to a world pass along, can hold any of these
+        const QStringList args{ "--world", "Steve's World", "100% Survival", "Cash $5", "a\"b", R"(back\slash)", "`id`" };
+        QString expected =
+            R"(~/opt/Timeless Launcher/launcher~ ~--world~ ~Steve's World~ ~100%% Survival~ ~Cash \\$5~ ~a\\~b~ ~back\\\\slash~ ~\\`id\\`~)";
+        QCOMPARE(FS::desktopEntryExec("/opt/Timeless Launcher/launcher", args), expected.replace('~', '"'));
+    }
+
+    void test_shellCommand()
+    {
+        const QStringList args{ "Steve's World", "100% Survival", "Cash $5", "a\"b", R"(back\slash)", "`id`", "" };
+        QString expected = R"('/opt/Timeless Launcher/launcher' 'Steve'\''s World' '100% Survival' 'Cash $5' 'a~b' 'back\slash' '`id`' '')";
+        QCOMPARE(FS::shellCommand("/opt/Timeless Launcher/launcher", args), expected.replace('~', '"'));
+#if defined(Q_OS_UNIX)
+        // and the shell gives them back as they were
+        QProcess shell;
+        shell.start("/bin/sh", { "-c", FS::shellCommand("printf", QStringList{ "[%s]" } + args) });
+        QVERIFY(shell.waitForFinished());
+        QString printed = R"([Steve's World][100% Survival][Cash $5][a~b][back\slash][`id`][])";
+        QCOMPARE(QString::fromUtf8(shell.readAllStandardOutput()), printed.replace('~', '"'));
+#endif
+    }
 
     void test_link()
     {
