@@ -51,7 +51,14 @@ void McClient::readRawResponse()
 
     m_resp.append(m_socket.readAll());
     if (m_responseReadState == ResponseReadState::Waiting && m_resp.size() >= 5) {
-        m_wantedRespLength = readVarInt(m_resp);
+        // whatever the other end sends, it must not throw out of the slot
+        try {
+            m_wantedRespLength = readVarInt(m_resp);
+        } catch (const Exception& e) {
+            m_responseReadState = ResponseReadState::Finished;
+            emitFail(e.cause());
+            return;
+        }
         m_responseReadState = ResponseReadState::GotLength;
     }
 
@@ -101,7 +108,7 @@ void McClient::writeVarInt(QByteArray& data, int value)
 {
     while ((value & ~g_varIntValueMask) != 0) {  // check if the value is too big to fit in 7 bits
         // Write 7 bits
-        data.append(static_cast<uint8_t>((value & ~g_varIntValueMask) | g_varIntContinue)); // NOLINT(*-narrowing-conversions)
+        data.append(static_cast<uint8_t>((value & g_varIntValueMask) | g_varIntContinue));  // NOLINT(*-narrowing-conversions)
 
         // Erase theses 7 bits from the value to write
         // Note: >>> means that the sign bit is shifted with the rest of the number rather than being left alone
@@ -156,8 +163,10 @@ void McClient::writeUInt16(QByteArray& data, const uint16_t value)
 
 void McClient::writeString(QByteArray& data, const QString& value)
 {
-    writeVarInt(data, static_cast<int32_t>(value.size()));
-    data.append(value.toUtf8());
+    // the length is that of the encoded string, which differs from the number of characters as soon as one isn't ASCII
+    const QByteArray utf8 = value.toUtf8();
+    writeVarInt(data, static_cast<int32_t>(utf8.size()));
+    data.append(utf8);
 }
 
 void McClient::writePacketToSocket(QByteArray& data)
@@ -176,6 +185,12 @@ void McClient::writePacketToSocket(QByteArray& data)
 
 void McClient::emitFail(const QString& error)
 {
+    // the socket can still report the server hanging up after the query is over, which must not end it a second time
+    if (m_done) {
+        return;
+    }
+    m_done = true;
+
     qDebug() << "Minecraft server ping for status error:" << error;
     emit failed(error);
     emit finished();
@@ -183,6 +198,11 @@ void McClient::emitFail(const QString& error)
 
 void McClient::emitSucceed(QJsonObject data)
 {
+    if (m_done) {
+        return;
+    }
+    m_done = true;
+
     emit succeeded(std::move(data));
     emit finished();
 }

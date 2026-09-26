@@ -93,3 +93,6 @@ ecm_add_test(DuplicateMods_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION
 
 ecm_add_test(World_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME World)
+
+ecm_add_test(McClient_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME McClient)

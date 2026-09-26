@@ -47,6 +47,7 @@ class McClient : public QObject {
     QString m_ip;
     uint16_t m_port;
     QTcpSocket m_socket;
+    bool m_done = false;
 
     ResponseReadState m_responseReadState = ResponseReadState::Waiting;
     int32_t m_wantedRespLength = 0;
