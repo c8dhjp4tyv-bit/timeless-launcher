@@ -1,10 +1,13 @@
 #include "AssetUpdateTask.h"
 
 #include "BuildConfig.h"
+
+#include <QFileInfo>
 #include "launch/LaunchStep.h"
 #include "minecraft/AssetsUtils.h"
 #include "minecraft/MinecraftInstance.h"
 #include "minecraft/PackProfile.h"
+#include "modplatform/helpers/HashUtils.h"
 #include "net/ChecksumValidator.h"
 
 #include "Application.h"
@@ -22,6 +25,17 @@ void AssetUpdateTask::executeTask()
     auto components = m_inst->getPackProfile();
     auto profile = components->getProfile();
     auto assets = profile->getMinecraftAssets();
+
+    // The version names the index by its hash, so a copy with that hash is the right one and there is nothing to ask for.
+    // Asking anyway made every launch fail whenever Mojang couldn't be reached, even with every asset in place.
+    const QString localIndex = "assets/indexes/" + assets->id + ".json";
+    if (!assets->sha1.isEmpty() && QFileInfo(localIndex).isFile() &&
+        Hashing::hash(localIndex, Hashing::Algorithm::Sha1).compare(assets->sha1, Qt::CaseInsensitive) == 0) {
+        qDebug() << "Asset index" << assets->id << "is already there";
+        assetIndexFinished();
+        return;
+    }
+
     QUrl indexUrl = assets->url;
     QString localPath = assets->id + ".json";
     auto job = makeShared<NetJob>(tr("Asset index for %1").arg(m_inst->name()), APPLICATION->network());
