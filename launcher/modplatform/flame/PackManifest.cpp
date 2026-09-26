@@ -1,6 +1,8 @@
 #include "PackManifest.h"
 #include "Json.h"
 
+#include <QDebug>
+
 namespace {
 void loadFileV1(Flame::File& f, QJsonObject& file)
 {
@@ -56,6 +58,23 @@ void loadManifestV1(Flame::Manifest& pack, QJsonObject& manifest)
     pack.isLoaded = true;
 }
 }  // namespace
+
+void Flame::dropUnchangedFiles(QMap<int, Flame::File>& files, QMap<int, Flame::File>& oldFiles)
+{
+    for (auto it = files.begin(); it != files.end();) {
+        if (oldFiles.remove(it.key()) > 0) {
+            qDebug() << "Removed file at" << it->targetFolder << "with id" << it->fileId << "from list of downloads";
+            it = files.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+QStringList Flame::installFolders()
+{
+    return { "mods", "resourcepacks", "texturepacks", "datapacks", "shaderpacks" };
+}
 
 void Flame::loadManifest(Flame::Manifest& m, const QString& filepath)
 {

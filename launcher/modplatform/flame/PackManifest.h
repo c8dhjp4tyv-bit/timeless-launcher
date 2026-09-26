@@ -39,6 +39,7 @@
 #include <QList>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 #include "modplatform/ModIndex.h"
 
@@ -83,4 +84,18 @@ struct Manifest {
 };
 
 void loadManifest(Flame::Manifest& m, const QString& filepath);
+
+/**
+ * Drops the files two versions of a pack share from both lists, as they need neither downloading nor removing.
+ * What is left in `files` is new, and what is left in `oldFiles` is gone from the pack or was replaced.
+ * Both lists are keyed by file id, so a file found in both is the very same file.
+ */
+void dropUnchangedFiles(QMap<int, Flame::File>& files, QMap<int, Flame::File>& oldFiles);
+
+/**
+ * The folders, relative to the game folder, that a file from a pack may have been installed to. Everything but a
+ * world is downloaded to mods/, and FlameCreationTask::validateOtherResources() then moves resource packs, shader
+ * packs and the like to where they belong. Worlds are unpacked into saves/, so there is no file left to find there.
+ */
+QStringList installFolders();
 }  // namespace Flame
