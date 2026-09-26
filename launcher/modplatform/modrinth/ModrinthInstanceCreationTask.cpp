@@ -21,6 +21,7 @@
 #include "modplatform/ModIndex.h"
 #include "settings/INISettingsObject.h"
 
+#include "ui/GuiUtil.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/UntrustedModsDialog.h"
 #include "ui/pages/modplatform/OptionalModDialog.h"
@@ -137,6 +138,11 @@ void ModrinthCreationTask::executeTask()
             return;
         }
         if (shouldUpdate == ShouldUpdate::Cancel) {
+            emitAborted();
+            return;
+        }
+        // updating from the pack's page has backed up the worlds already
+        if (!GuiUtil::backUpWorldsBeforeUpdate(inst, m_parent)) {
             emitAborted();
             return;
         }

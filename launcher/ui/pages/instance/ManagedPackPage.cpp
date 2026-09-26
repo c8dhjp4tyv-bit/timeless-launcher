@@ -14,18 +14,14 @@
 #include <memory>
 
 #include <QDir>
-#include <QFileInfo>
 #include "Application.h"
 #include "InstanceImportTask.h"
 #include "InstanceList.h"
 #include "InstanceTask.h"
 #include "Markdown.h"
 #include "StringUtils.h"
-#include "archive/ExportToZipTask.h"
-#include "minecraft/MinecraftInstance.h"
-#include "minecraft/WorldBackups.h"
-#include "tasks/SequentialTask.h"
 
+#include "ui/GuiUtil.h"
 #include "ui/InstanceWindow.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/ProgressDialog.h"
@@ -465,56 +461,7 @@ void FlameManagedPackPage::updateFromFile()
 
 bool ManagedPackPage::backUpWorlds()
 {
-    m_worldsBackedUpTo.clear();
-    auto* instance = dynamic_cast<MinecraftInstance*>(m_inst);
-    if (instance == nullptr || !instance->settings()->get("BackUpWorldsBeforeUpdate").toBool()) {
-        return true;
-    }
-
-    const auto saves = instance->worldDir();
-    const auto backupDir = WorldBackups::backupDir(saves);
-    const auto backUps = makeShared<SequentialTask>(tr("Backing up the worlds"));
-    QStringList problems;
-    int queued = 0;
-    // the folders the Worlds page lists: the ones with a level.dat
-    for (const auto& folder : QDir(saves).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
-        if (!QFileInfo::exists(QDir(folder.absoluteFilePath()).filePath("level.dat"))) {
-            continue;
-        }
-        if (auto task = WorldBackups::createTask(folder, backupDir)) {
-            backUps->addTask(Task::Ptr(task.release()));
-            queued++;
-        } else {
-            problems << tr("%1: its files or %2 can't be read").arg(folder.fileName(), backupDir);
-        }
-    }
-
-    if (queued > 0) {
-        ProgressDialog dialog(this);
-        dialog.setSkipButton(true, tr("Abort"));
-        dialog.execWithTask(backUps.get());
-        if (backUps->getState() == Task::State::AbortedByUser) {
-            return false;
-        }
-        if (!backUps->wasSuccessful()) {
-            problems << backUps->failReason();
-        }
-    }
-    if (problems.isEmpty()) {
-        if (queued > 0) {
-            m_worldsBackedUpTo = backupDir;
-        }
-        return true;
-    }
-
-    // a mod the update takes out takes its blocks and items out of the worlds, so this is the player's call
-    auto* question = CustomMessageBox::selectable(
-        this, tr("Couldn't back up the worlds"),
-        tr("The worlds couldn't all be backed up before the update:\n%1\n\nUpdate the pack anyway?").arg(problems.join('\n')),
-        QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    const bool updateAnyway = question->exec() == QMessageBox::Yes;
-    question->deleteLater();
-    return updateAnyway;
+    return GuiUtil::backUpWorldsBeforeUpdate(m_inst, this, &m_worldsBackedUpTo);
 }
 
 void ManagedPackPage::updatePack(const QUrl& url, bool trusted, const QString& versionID, const QString& versionName)

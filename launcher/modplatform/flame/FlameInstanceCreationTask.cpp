@@ -55,6 +55,7 @@
 #include "settings/INISettingsObject.h"
 
 #include "tasks/ConcurrentTask.h"
+#include "ui/GuiUtil.h"
 #include "ui/dialogs/BlockedModsDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 
@@ -131,6 +132,11 @@ void FlameCreationTask::executeTask()
             return;
         }
         if (shouldUpdate == ShouldUpdate::Cancel) {
+            emitAborted();
+            return;
+        }
+        // updating from the pack's page has backed up the worlds already
+        if (!GuiUtil::backUpWorldsBeforeUpdate(inst, m_parent)) {
             emitAborted();
             return;
         }
