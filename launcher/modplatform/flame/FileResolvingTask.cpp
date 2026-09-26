@@ -210,6 +210,9 @@ void Flame::FileResolvingTask::getFlameProjects()
             qWarning() << "Error while parsing JSON response from Modrinth projects task at" << parseError.offset
                        << "reason:" << parseError.errorString();
             qWarning() << *response;
+            stepProgress2->state = TaskStepState::Failed;
+            stepProgress(*stepProgress2);
+            emitFailed(tr("Invalid data returned from the API."));
             return;
         }
 

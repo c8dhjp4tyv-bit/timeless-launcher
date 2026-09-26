@@ -124,6 +124,7 @@ void PackInstallTask::onDownloadSucceeded(QByteArray* responsePtr)
     if (parseError.error != QJsonParseError::NoError) {
         qWarning() << "Error while parsing JSON response from ATLauncher at" << parseError.offset << "reason:" << parseError.errorString();
         qWarning() << response;
+        emitFailed(tr("Could not understand pack manifest:\n") + parseError.errorString());
         return;
     }
     auto obj = doc.object();

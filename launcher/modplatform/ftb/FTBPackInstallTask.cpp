@@ -122,6 +122,7 @@ void PackInstallTask::onManifestDownloadSucceeded(QByteArray* responsePtr)
     if (parseError.error != QJsonParseError::NoError) {
         qWarning() << "Error while parsing JSON response from FTB at " << parseError.offset << " reason: " << parseError.errorString();
         qWarning() << response;
+        emitFailed(tr("Could not understand pack manifest:\n") + parseError.errorString());
         return;
     }
 
