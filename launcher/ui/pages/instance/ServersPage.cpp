@@ -70,16 +70,9 @@ struct Server {
     }
     Server(nbt::tag_compound& server)
     {
-        std::string addressStr(server["ip"]);
-        m_address = QString::fromUtf8(addressStr.c_str());
-
-        std::string nameStr(server["name"]);
-        m_name = QString::fromUtf8(nameStr.c_str());
-
-        if (server["icon"]) {
-            std::string base64str(server["icon"]);
-            m_icon = QByteArray::fromBase64(base64str.c_str());
-        }
+        m_address = QString::fromStdString(readString(server, "ip"));
+        m_name = QString::fromStdString(readString(server, "name"));
+        m_icon = QByteArray::fromBase64(QByteArray::fromStdString(readString(server, "icon")));
 
         if (server.has_key("acceptTextures", nbt::tag_type::Byte)) {
             bool value = server["acceptTextures"].as<nbt::tag_byte>().get();
@@ -113,6 +106,16 @@ struct Server {
 
     // Data - temporary
     std::optional<int> m_currentPlayers;  // nullopt if not calculated/calculating
+
+   private:
+    /// Like the game, reads a missing entry or one that isn't a string as an empty string rather than failing over it.
+    static std::string readString(const nbt::tag_compound& server, const std::string& key)
+    {
+        if (!server.has_key(key, nbt::tag_type::String)) {
+            return {};
+        }
+        return server.at(key).as<nbt::tag_string>().get();
+    }
 };
 
 static std::unique_ptr<nbt::tag_compound> parseServersDat(const QString& filename)
@@ -405,11 +408,15 @@ class ServersModel : public QAbstractListModel {
         QList<Server> servers;
         auto serversDat = parseServersDat(serversPath());
         if (serversDat) {
-            auto& serversList = serversDat->at("servers").as<nbt::tag_list>();
-            for (auto iter = serversList.begin(); iter != serversList.end(); iter++) {
-                auto& serverTag = (*iter).as<nbt::tag_compound>();
-                Server s(serverTag);
-                servers.append(s);
+            // The tags throw on a missing key or an unexpected type, and nothing would catch that on the way out of a slot.
+            // A file that isn't laid out as expected is treated like one that doesn't parse.
+            try {
+                for (auto& serverTag : serversDat->at("servers").as<nbt::tag_list>()) {
+                    servers.append(Server(serverTag.as<nbt::tag_compound>()));
+                }
+            } catch (const std::exception& e) {
+                qWarning() << "Unable to read the server list" << serversPath() << ":" << e.what();
+                servers.clear();
             }
         }
         m_servers.swap(servers);
@@ -446,11 +453,14 @@ class ServersModel : public QAbstractListModel {
             m_currentQueryTask->addTask(Task::Ptr(task));
 
             // Update the model when the task is done
-            connect(task, &Task::finished, this, [this, task, row]() {
-                if (m_servers.size() < row)
+            // The server can be moved or removed while it's being pinged, so follow it rather than its row
+            connect(task, &Task::finished, this, [this, task, serverIndex = QPersistentModelIndex(index(row, 0))]() {
+                if (!serverIndex.isValid()) {
                     return;
-                m_servers[row].m_currentPlayers = task->m_outputOnlinePlayers;
-                emit dataChanged(index(row, 0), index(row, COLUMN_COUNT - 1));
+                }
+                const int serverRow = serverIndex.row();
+                m_servers[serverRow].m_currentPlayers = task->m_outputOnlinePlayers;
+                emit dataChanged(index(serverRow, 0), index(serverRow, COLUMN_COUNT - 1));
             });
             row++;
         }
