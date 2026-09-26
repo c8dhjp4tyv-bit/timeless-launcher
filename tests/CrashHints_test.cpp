@@ -123,6 +123,58 @@ class CrashHintsTest : public QObject {
             << "GLFW error 65543: WGL: OpenGL profile requested but WGL_ARB_create_context_profile is unavailable\n"
             << 17 << QList<QStringList>{ { "OpenGL version" } };
 
+        // what Java 21 printed when a library named after NVIDIA's driver crashed, but for a shorter path
+        QTest::newRow("native crash in NVIDIA's driver")
+            << "#\n"
+               "# A fatal error has been detected by the Java Runtime Environment:\n"
+               "#\n"
+               "#  SIGSEGV (0xb) at pc=0x00007fa35fa1e115, pid=8868, tid=8869\n"
+               "#\n"
+               "# JRE version: OpenJDK Runtime Environment (21.0.10+7) (build 21.0.10+7-Ubuntu-124.04)\n"
+               "# Java VM: OpenJDK 64-Bit Server VM (21.0.10+7-Ubuntu-124.04, mixed mode, sharing, tiered, compressed oops, compressed "
+               "class ptrs, g1 gc, linux-amd64)\n"
+               "# Problematic frame:\n"
+               "# C  [libnvidia-glcore.so.535.54.03+0x1115]  Java_Segv_crash+0x1c\n"
+               "#\n"
+               "# No core dump will be written. Core dumps have been disabled. To enable core dumping, try \"ulimit -c unlimited\" "
+               "before starting Java again\n"
+               "#\n"
+               "# An error report file with more information is saved as:\n"
+               "# /home/alex/minecraft/hs_err_pid8868.log\n"
+               "#\n"
+            << 21 << QList<QStringList>{ { "graphics driver (libnvidia-glcore.so.535.54.03)" } };
+
+        QTest::newRow("native crash in AMD's driver")
+            << "#  EXCEPTION_ACCESS_VIOLATION (0xc0000005) at pc=0x00007ffb1d2b0c5e, pid=1234, tid=5678\n"
+               "# Problematic frame:\n"
+               "# C  [atio6axx.dll+0x1d0c5e]\n"
+            << 17 << QList<QStringList>{ { "graphics driver (atio6axx.dll)" } };
+
+        QTest::newRow("native crash in Intel's driver") << "# Problematic frame:\r\n# C  [ig9icd64.dll+0x3a1b2c]\r\n"
+                                                        << 17 << QList<QStringList>{ { "graphics driver (ig9icd64.dll)" } };
+
+        QTest::newRow("native crash in Mesa") << "# Problematic frame:\n# C  [radeonsi_dri.so+0x5d2a61]\n"
+                                              << 17 << QList<QStringList>{ { "graphics driver (radeonsi_dri.so)" } };
+
+        QTest::newRow("native crash elsewhere")
+            << "# Problematic frame:\n"
+               "# C  [lwjgl.dll+0xd28b]\n"
+               "#\n"
+               "# An error report file with more information is saved as:\n"
+               "# C:\\Users\\Alex Doe\\AppData\\Roaming\\TimelessLauncher\\instances\\1.20.1\\minecraft\\hs_err_pid1234.log\n"
+            << 17
+            << QList<QStringList>{ { "crashed in lwjgl.dll",
+                                     "C:\\Users\\Alex Doe\\AppData\\Roaming\\TimelessLauncher\\instances\\1.20.1\\minecraft\\hs_err_"
+                                     "pid1234.log." } };
+
+        QTest::newRow("Java itself crashing") << "# Problematic frame:\n# V  [libjvm.so+0x9d7b91]  Unsafe_PutLong+0x51\n"
+                                              << 21 << QList<QStringList>{ { "crashed in libjvm.so, outside the game's code." } };
+
+        QTest::newRow("crash in compiled Java code")
+            << "# Problematic frame:\n"
+               "# J 1234 c2 java.lang.String.hashCode()I java.base@21.0.2 (60 bytes) @ 0x00007f2a8d1c3a4b [0x00007f2a8d1c3a00+0x4b]\n"
+            << 21 << QList<QStringList>{};
+
         QTest::newRow("two causes") << "Unrecognized VM option 'ZGenerational'\n"
                                        "java.lang.OutOfMemoryError: Java heap space\n"
                                     << 17 << QList<QStringList>{ { "ZGenerational" }, { "ran out of memory" } };

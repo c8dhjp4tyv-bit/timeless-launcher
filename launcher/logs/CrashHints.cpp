@@ -142,6 +142,27 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
             "the latest graphics driver may help; a very old graphics card can only run older versions of Minecraft.");
     }
 
+    // Java crashing in native code, which it reports in lines starting with #, naming the library it crashed in
+    static const QRegularExpression s_problematicFrame(R"(# Problematic frame:\s*\n#\s+\w\s+\[([^\]+]+))");
+    static const QRegularExpression s_errorReport(R"(# An error report file with more information is saved as:\s*\n#\s*([^\n]+))");
+    // the OpenGL drivers of AMD, NVIDIA and Intel on Windows, NVIDIA's and Mesa's on Linux, and the ones macOS comes with
+    static const QRegularExpression s_graphicsDriver(
+        R"(^(?:(?:atio6axx|atioglxx|nvoglv32|nvoglv64|ig\w*icd32|ig\w*icd64)\.dll|lib(?:nvidia-glcore|nvidia-eglcore|GLX_nvidia|GLX_mesa)\.so.*|libgallium-.*\.so|\w+_dri\.so|\w+GLDriver)$)",
+        QRegularExpression::CaseInsensitiveOption);
+    if (const auto frame = s_problematicFrame.match(log); frame.hasMatch()) {
+        const auto library = frame.captured(1);
+        if (library.contains(s_graphicsDriver)) {
+            hints << tr("Java crashed inside the graphics driver (%1). Install the latest driver from the maker of the graphics card "
+                        "(NVIDIA, AMD or Intel).")
+                         .arg(library);
+        } else if (const auto report = s_errorReport.match(log); report.hasMatch()) {
+            hints << tr("Java crashed in %1, outside the game's code. It wrote what it knows about the crash to %2.")
+                         .arg(library, report.captured(1).trimmed());
+        } else {
+            hints << tr("Java crashed in %1, outside the game's code.").arg(library);
+        }
+    }
+
     // Mods the mod loader can't load, as it explains it
 
     // Fabric and Quilt, which also work out what to change when they can
