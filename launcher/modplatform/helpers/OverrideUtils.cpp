@@ -1,7 +1,11 @@
 #include "OverrideUtils.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QDirIterator>
+#include <QFileInfo>
+#include <QHash>
+#include <QSet>
 
 #include "FileSystem.h"
 
@@ -60,6 +64,99 @@ QStringList readOverrides(const QString& name, const QString& parent_folder)
     file.close();
 
     return previous_overrides;
+}
+
+namespace {
+
+/// The lines of an options.txt, which the game writes with the line breaks of the system it runs on
+QStringList optionLines(const QString& text)
+{
+    QStringList lines;
+    for (auto line : text.split('\n')) {
+        if (line.endsWith('\r')) {
+            line.chop(1);
+        }
+        if (!line.isEmpty()) {
+            lines << line;
+        }
+    }
+    return lines;
+}
+
+/// The key of a line of an options.txt, which the game takes up to the first colon, or nothing if the line has none
+QString optionKey(const QString& line)
+{
+    const auto colon = line.indexOf(':');
+    return colon > 0 ? line.left(colon) : QString();
+}
+
+QHash<QString, QString> optionValues(const QStringList& lines)
+{
+    QHash<QString, QString> values;
+    for (const auto& line : lines) {
+        if (const auto key = optionKey(line); !key.isEmpty()) {
+            values.insert(key, line.mid(key.size() + 1));
+        }
+    }
+    return values;
+}
+
+QString readText(const QString& path)
+{
+    return QFileInfo::exists(path) ? QString::fromUtf8(FS::read(path)) : QString();
+}
+
+}  // namespace
+
+QString mergeGameOptions(const QString& player, const QString& oldPack, const QString& newPack)
+{
+    const auto oldValues = optionValues(optionLines(oldPack));
+    const auto newLines = optionLines(newPack);
+    const auto newValues = optionValues(newLines);
+
+    QStringList merged;
+    QSet<QString> keys;
+    for (const auto& line : optionLines(player)) {
+        const auto key = optionKey(line);
+        keys.insert(key);
+        // one the player left as the pack had it is the pack's to change
+        if (!key.isEmpty() && newValues.contains(key) && oldValues.contains(key) && oldValues.value(key) == line.mid(key.size() + 1)) {
+            merged << key + ':' + newValues.value(key);
+        } else {
+            merged << line;
+        }
+    }
+    for (const auto& line : newLines) {
+        if (const auto key = optionKey(line); !key.isEmpty() && !keys.contains(key)) {
+            merged << line;
+            keys.insert(key);
+        }
+    }
+    return merged.join('\n') + '\n';
+}
+
+void keepGameOptions(const QString& game_root, const QString& pack_folder, const QString& old_game_root, const QString& old_pack_folder)
+{
+    const auto options = FS::PathCombine(game_root, "options.txt");
+    const auto oldPackOptions = old_pack_folder.isEmpty() ? QString() : FS::PathCombine(old_pack_folder, "options.txt");
+    try {
+        const bool packHasOptions = QFileInfo::exists(options);
+        const auto pack = readText(options);
+        // what the installed version kept is replaced even when this one has no options, so that it isn't taken for this one's
+        if (packHasOptions || QFileInfo::exists(oldPackOptions)) {
+            FS::write(FS::PathCombine(pack_folder, "options.txt"), pack.toUtf8());
+        }
+
+        const auto playerOptions = old_game_root.isEmpty() ? QString() : FS::PathCombine(old_game_root, "options.txt");
+        if (!QFileInfo::exists(playerOptions)) {
+            return;
+        }
+        // this goes in place of the player's file once the files the installed version put there are taken out
+        const auto player = FS::read(playerOptions);
+        FS::write(options, packHasOptions ? mergeGameOptions(QString::fromUtf8(player), readText(oldPackOptions), pack).toUtf8() : player);
+    } catch (const FS::FileSystemException& e) {
+        qWarning() << "Could not keep the player's game options:" << e.cause();
+    }
 }
 
 }  // namespace Override

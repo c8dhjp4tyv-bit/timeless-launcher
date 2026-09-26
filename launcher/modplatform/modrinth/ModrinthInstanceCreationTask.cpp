@@ -206,6 +206,11 @@ void ModrinthCreationTask::createInstance()
         }
     }
 
+    // an update keeps the player's game options
+    const auto* oldInstance = m_oldInstance.value_or(nullptr);
+    Override::keepGameOptions(mcPath, parentFolder, oldInstance ? oldInstance->gameRoot() : QString(),
+                              oldInstance ? FS::PathCombine(oldInstance->instanceRoot(), "mrpack") : QString());
+
     if (!promptForUntrustedMods()) {
         emitAborted();
         return;

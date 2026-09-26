@@ -396,6 +396,11 @@ void FlameCreationTask::createInstance()
         }
     }
 
+    // an update keeps the player's game options
+    const auto* oldInstance = m_oldInstance.value_or(nullptr);
+    Override::keepGameOptions(FS::PathCombine(m_stagingPath, "minecraft"), parentFolder, oldInstance ? oldInstance->gameRoot() : QString(),
+                              oldInstance ? FS::PathCombine(oldInstance->instanceRoot(), "flame") : QString());
+
     if (!promptForUntrustedMods()) {
         emitAborted();
         return;
