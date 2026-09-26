@@ -1,10 +1,14 @@
 #include "OverrideUtils.h"
 
+#include <QCryptographicHash>
 #include <QDebug>
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSet>
 
 #include "FileSystem.h"
@@ -64,6 +68,76 @@ QStringList readOverrides(const QString& name, const QString& parent_folder)
     file.close();
 
     return previous_overrides;
+}
+
+namespace {
+
+/// The SHA-1 of a file as a hexadecimal string, or nothing if it's missing, unreadable or too large to be worth comparing
+QString sha1Of(const QString& path)
+{
+    constexpr qint64 largestCompared = qint64{ 16 } * 1024 * 1024;
+    QFile file(path);
+    if (file.size() > largestCompared || !file.open(QFile::ReadOnly)) {
+        return {};
+    }
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    if (!hash.addData(&file)) {
+        return {};
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+}  // namespace
+
+QStringList keepPlayerChanges(const QString& game_root,
+                              const QString& pack_folder,
+                              QStringList overrides,
+                              const QString& old_game_root,
+                              const QString& old_pack_folder)
+{
+    constexpr auto hashesFile = "override-hashes.json";
+    const QDir game(game_root);
+    QJsonObject oldHashes;
+    if (!old_pack_folder.isEmpty()) {
+        QFile file(FS::PathCombine(old_pack_folder, hashesFile));
+        if (file.open(QFile::ReadOnly)) {
+            oldHashes = QJsonDocument::fromJson(file.readAll()).object();
+        }
+    }
+
+    QJsonObject hashes;
+    QStringList kept;
+    overrides.removeDuplicates();
+    for (const auto& path : overrides) {
+        if (path.isEmpty() || path == "options.txt" || path.startsWith("saves/")) {
+            continue;
+        }
+        const auto hash = sha1Of(game.filePath(path));
+        if (hash.isEmpty()) {
+            continue;
+        }
+        hashes.insert(path, hash);
+        if (old_game_root.isEmpty() || oldHashes.value(path).toString() != hash) {
+            continue;
+        }
+        const auto playerFile = QDir(old_game_root).filePath(path);
+        if (const auto playerHash = sha1Of(playerFile); playerHash.isEmpty() || playerHash == hash) {
+            continue;
+        }
+        try {
+            FS::write(game.filePath(path), FS::read(playerFile));
+            kept << path;
+        } catch (const FS::FileSystemException& e) {
+            qWarning() << "Could not keep the player's changes to" << path << ":" << e.cause();
+        }
+    }
+
+    try {
+        FS::write(FS::PathCombine(pack_folder, hashesFile), QJsonDocument(hashes).toJson());
+    } catch (const FS::FileSystemException& e) {
+        qWarning() << "Could not keep what the pack's files are:" << e.cause();
+    }
+    return kept;
 }
 
 void keepEnabledStates(const QString& game_root, const QStringList& overrides, const QString& old_game_root)

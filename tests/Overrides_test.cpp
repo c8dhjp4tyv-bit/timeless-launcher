@@ -61,6 +61,60 @@ class OverridesTest : public QObject {
         QCOMPARE(listed, files);
     }
 
+    void keepPlayerChanges()
+    {
+        const QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QDir game(FS::PathCombine(root.path(), "staging", "minecraft"));
+        const auto packFolder = FS::PathCombine(root.path(), "staging", "mrpack");
+        const QDir oldGame(FS::PathCombine(root.path(), "instance", "minecraft"));
+        const auto oldPackFolder = FS::PathCombine(root.path(), "instance", "mrpack");
+        const QStringList overrides{ "config/same.toml",      "config/changed.toml", "config/untouched.toml",
+                                     "saves/Lobby/level.dat", "options.txt",         "" };
+
+        // installing keeps what the files are as the pack comes with them, and changes nothing
+        const auto install = [&](const QStringList& contents) {
+            for (int i = 0; i < 5; i++) {
+                FS::write(game.filePath(overrides[i]), contents[i].toUtf8());
+            }
+        };
+        install({ "same 1", "changed 1", "untouched 1", "world 1", "renderDistance:8\n" });
+        QCOMPARE(Override::keepPlayerChanges(game.path(), packFolder, overrides), QStringList());
+        QCOMPARE(FS::read(game.filePath("config/same.toml")), "same 1");
+
+        // the player changes the files of the installed version, and plays in the pack's world
+        QVERIFY(QDir().mkpath(FS::PathCombine(root.path(), "instance")));
+        QVERIFY(QDir().rename(game.path(), oldGame.path()));
+        QVERIFY(QDir().rename(packFolder, oldPackFolder));
+        for (const auto* file : { "config/same.toml", "config/changed.toml", "saves/Lobby/level.dat", "options.txt" }) {
+            FS::write(oldGame.filePath(file), "the player's");
+        }
+
+        // the update changes one of the files the player changed
+        install({ "same 1", "changed 2", "untouched 1", "world 1", "renderDistance:8\n" });
+        QCOMPARE(Override::keepPlayerChanges(game.path(), packFolder, overrides, oldGame.path(), oldPackFolder),
+                 QStringList({ "config/same.toml" }));
+        QCOMPARE(FS::read(game.filePath("config/same.toml")), "the player's");
+        QCOMPARE(FS::read(game.filePath("config/changed.toml")), "changed 2");
+        QCOMPARE(FS::read(game.filePath("config/untouched.toml")), "untouched 1");
+        // worlds and game options have their own handling
+        QCOMPARE(FS::read(game.filePath("saves/Lobby/level.dat")), "world 1");
+        QCOMPARE(FS::read(game.filePath("options.txt")), "renderDistance:8\n");
+
+        // what's kept for the next update is the pack's, not the player's
+        QVERIFY(QDir(oldPackFolder).removeRecursively());
+        QVERIFY(QDir().rename(packFolder, oldPackFolder));
+        install({ "same 1", "changed 2", "untouched 1", "world 1", "renderDistance:8\n" });
+        QCOMPARE(Override::keepPlayerChanges(game.path(), packFolder, overrides, oldGame.path(), oldPackFolder),
+                 QStringList({ "config/same.toml", "config/changed.toml" }));
+
+        // without knowing what the installed version's files were, nothing is kept
+        QVERIFY(QDir(oldPackFolder).removeRecursively());
+        install({ "same 1", "changed 2", "untouched 1", "world 1", "renderDistance:8\n" });
+        QCOMPARE(Override::keepPlayerChanges(game.path(), packFolder, overrides, oldGame.path(), oldPackFolder), QStringList());
+        QCOMPARE(FS::read(game.filePath("config/same.toml")), "same 1");
+    }
+
     void keepEnabledStates()
     {
         const QTemporaryDir root;

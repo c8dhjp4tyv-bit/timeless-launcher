@@ -17,6 +17,21 @@ void createOverrides(const QString& name, const QString& parent_folder, const QS
  */
 QStringList readOverrides(const QString& name, const QString& parent_folder);
 
+/** Keeps the player's changes to the files of a pack that an update of it leaves as they were, and returns their paths.
+ *
+ *  `game_root` is the game folder the pack is being put together in, with its overrides in place, `overrides` their paths
+ *  in it, and `pack_folder` the folder the launcher keeps the information on the pack in, next to it. What each override is
+ *  as the pack comes with it is kept there for the next update. When updating, `old_game_root` and `old_pack_folder` are the
+ *  same folders of the installed instance: an override the update comes with as the installed version had it, which the
+ *  player changed, is replaced by the player's version. Worlds and options.txt are left to their own handling, and files
+ *  over 16 MiB aren't compared.
+ */
+QStringList keepPlayerChanges(const QString& game_root,
+                              const QString& pack_folder,
+                              QStringList overrides,
+                              const QString& old_game_root = {},
+                              const QString& old_pack_folder = {});
+
 /** Turns the overrides of an update of a pack on or off as the player has the files with the same paths.
  *
  *  `game_root` is the game folder the update is being put together in, with its overrides in place, and `overrides` their

@@ -182,7 +182,7 @@ void FlameCreationTask::executeTask()
         const QDir oldMinecraftDir(inst->gameRoot());
 
         // We will remove all the previous overrides, to prevent duplicate files!
-        // TODO: Currently 'overrides' will always override the stuff on update. How do we preserve unchanged overrides?
+        // The player's changes to the ones the update leaves as they were are put back once its overrides are in place.
         // The player may have turned off a mod among them, so that copy goes too, and the update's is turned off in turn.
         auto oldOverrides = Override::readOverrides("overrides", oldIndexFolder);
         for (const auto& entry : oldOverrides) {
@@ -396,13 +396,17 @@ void FlameCreationTask::createInstance()
         }
     }
 
-    // an update keeps the player's game options, and the mods the pack comes with on or off as the player has them
+    // an update keeps the player's changes to the files it leaves as they were, the player's game options, and the mods the pack
+    // comes with on or off as the player has them
     const auto* oldInstance = m_oldInstance.value_or(nullptr);
-    Override::keepGameOptions(FS::PathCombine(m_stagingPath, "minecraft"), parentFolder, oldInstance ? oldInstance->gameRoot() : QString(),
-                              oldInstance ? FS::PathCombine(oldInstance->instanceRoot(), "flame") : QString());
+    const auto gameRoot = FS::PathCombine(m_stagingPath, "minecraft");
+    const auto oldGameRoot = oldInstance ? oldInstance->gameRoot() : QString();
+    const auto oldPackFolder = oldInstance ? FS::PathCombine(oldInstance->instanceRoot(), "flame") : QString();
+    const auto overrides = Override::readOverrides("overrides", parentFolder);
+    Override::keepPlayerChanges(gameRoot, parentFolder, overrides, oldGameRoot, oldPackFolder);
+    Override::keepGameOptions(gameRoot, parentFolder, oldGameRoot, oldPackFolder);
     if (oldInstance != nullptr) {
-        Override::keepEnabledStates(FS::PathCombine(m_stagingPath, "minecraft"), Override::readOverrides("overrides", parentFolder),
-                                    oldInstance->gameRoot());
+        Override::keepEnabledStates(gameRoot, overrides, oldGameRoot);
     }
 
     if (!promptForUntrustedMods()) {
