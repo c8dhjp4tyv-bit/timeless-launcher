@@ -217,3 +217,28 @@ QString GZip::readGzFileByBlocks(QFile* source, std::function<bool(const QByteAr
     auto ret = inf(source, handleBlock);
     return zerr(ret);
 }
+
+QString GZip::readGzFileByLines(QFile* source, const std::function<bool(const QString&)>& handleLine)
+{
+    QByteArray pending;
+    bool stopped = false;
+    const auto error = readGzFileByBlocks(source, [&pending, &stopped, &handleLine](const QByteArray& block) {
+        pending += block;
+        qsizetype start = 0;
+        for (auto newline = pending.indexOf('\n'); newline != -1; newline = pending.indexOf('\n', start)) {
+            // Only whole lines are decoded: a block can end in the middle of a character
+            const auto line = QString::fromUtf8(QByteArrayView(pending).sliced(start, newline - start));
+            start = newline + 1;
+            if (!handleLine(line)) {
+                stopped = true;
+                return false;
+            }
+        }
+        pending.remove(0, start);
+        return true;
+    });
+    if (error.isEmpty() && !stopped && !pending.isEmpty()) {
+        handleLine(QString::fromUtf8(pending));
+    }
+    return error;
+}

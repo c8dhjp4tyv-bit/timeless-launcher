@@ -311,28 +311,11 @@ void OtherLogsPage::reload()
         }
         m_model->clear();
         if (file.fileName().endsWith(".gz")) {
-            QString line;
-            auto error = GZip::readGzFileByBlocks(&file, [&line, handleLine](const QByteArray& d) {
-                auto block = d;
-                int newlineIndex = block.indexOf('\n');
-                while (newlineIndex != -1) {
-                    line += QString::fromUtf8(block).left(newlineIndex);
-                    block.remove(0, newlineIndex + 1);
-                    if (handleLine(line)) {
-                        line.clear();
-                        return false;
-                    }
-                    line.clear();
-                    newlineIndex = block.indexOf('\n');
-                }
-                line += QString::fromUtf8(block);
-                return true;
-            });
+            // handleLine() says when the log is full, and reading goes on as long as it isn't
+            auto error = GZip::readGzFileByLines(&file, [&handleLine](const QString& line) { return !handleLine(line); });
             if (!error.isEmpty()) {
                 setPlainText(tr("The file (%1) encountered an error when reading: %2.").arg(file.fileName(), error));
                 return;
-            } else if (!line.isEmpty()) {
-                handleLine(line);
             }
         } else {
             while (!file.atEnd() && !handleLine(QString::fromUtf8(file.readLine()))) {
