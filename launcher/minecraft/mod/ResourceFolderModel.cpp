@@ -325,6 +325,11 @@ bool ResourceFolderModel::setResourceEnabled(const QModelIndexList& indexes, Ena
         }
     }
 
+    return applyEnableAction(indexes, action);
+}
+
+bool ResourceFolderModel::applyEnableAction(const QModelIndexList& indexes, EnableAction action)
+{
     if (indexes.isEmpty()) {
         return true;
     }

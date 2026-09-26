@@ -17,6 +17,8 @@
 
 #include "CheckDuplicateMods.h"
 
+#include <QPushButton>
+
 #include "launch/LaunchTask.h"
 #include "minecraft/MinecraftInstance.h"
 #include "minecraft/PackProfile.h"
@@ -59,17 +61,39 @@ void CheckDuplicateMods::check()
         tr("These mods are enabled more than once, and the mod loader will refuse to start with them:\n  %1").arg(lines.join("\n  ")),
         MessageLevel::Warning);
 
+    auto* mods = m_parent->instance()->loaderModList();
+    const auto older = mods->olderDuplicates(loaders);
     auto* dialog = CustomMessageBox::selectable(
         nullptr, tr("Duplicate mods"),
         tr("Some mods are enabled more than once, and the game won't start like this. Each line holds copies of one mod:\n\n"
            "%1\n\n"
-           "Disable or delete all copies but one on the Mods page. Launch anyway?")
-            .arg(lines.join("\n")),
-        QMessageBox::Icon::Warning, QMessageBox::StandardButton::Yes | QMessageBox::StandardButton::No, QMessageBox::StandardButton::No);
-    const bool launchAnyway = dialog->exec() == QMessageBox::Yes;
+           "Turn Off Older Copies keeps the latest version of each and turns these off (the Mods page can turn them back on):\n\n"
+           "%2")
+            .arg(lines.join("\n"), older.join("\n")),
+        QMessageBox::Icon::Warning, QMessageBox::StandardButton::Cancel, QMessageBox::StandardButton::NoButton);
+    auto* turnOff = dialog->addButton(tr("Turn Off Older Copies"), QMessageBox::AcceptRole);
+    auto* launchAnyway = dialog->addButton(tr("Launch Anyway"), QMessageBox::ActionRole);
+    dialog->setDefaultButton(turnOff);
+    dialog->setEscapeButton(QMessageBox::StandardButton::Cancel);
+    dialog->exec();
+    auto* choice = dialog->clickedButton();
     dialog->deleteLater();
 
-    if (!launchAnyway) {
+    if (choice == turnOff) {
+        QModelIndexList indexes;
+        for (int row = 0; row < mods->rowCount(); row++) {
+            if (older.contains(mods->at(row).fileinfo().fileName())) {
+                indexes << mods->index(row, 0);
+            }
+        }
+        if (!mods->setModsEnabled(indexes, EnableAction::DISABLE)) {
+            const auto reason = tr("Couldn't turn off the older copies of the mods");
+            emit logLine(reason, MessageLevel::Fatal);
+            emitFailed(reason);
+            return;
+        }
+        emit logLine(tr("Turned off the older copies:\n  %1").arg(older.join("\n  ")), MessageLevel::Launcher);
+    } else if (choice != launchAnyway) {
         const auto reason = tr("Some mods are enabled more than once");
         emit logLine(reason, MessageLevel::Fatal);
         emitFailed(reason);

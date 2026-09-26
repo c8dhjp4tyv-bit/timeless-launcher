@@ -53,6 +53,7 @@
 #include <algorithm>
 #include <set>
 
+#include "Version.h"
 #include "minecraft/mod/Resource.h"
 #include "minecraft/mod/ResourceFolderModel.h"
 #include "minecraft/mod/tasks/LocalModParseTask.h"
@@ -395,6 +396,38 @@ QList<QStringList> ModFolderModel::duplicateGroups(ModPlatform::ModLoaderTypes l
     return groups;
 }
 
+QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)
+{
+    QHash<QString, Mod*> byFileName;
+    for (auto* mod : allMods()) {
+        byFileName.insert(mod->fileinfo().fileName(), mod);
+    }
+
+    QStringList older;
+    for (const auto& group : duplicateGroups(loaders)) {
+        QList<Mod*> copies;
+        for (const auto& fileName : group) {
+            copies << byFileName.value(fileName);
+        }
+        // the one to keep first
+        std::ranges::sort(copies, [](const Mod* a, const Mod* b) {
+            if (const auto order = Version(a->version()) <=> Version(b->version()); order != 0) {
+                return order > 0;
+            }
+            const auto aModified = a->fileinfo().lastModified();
+            const auto bModified = b->fileinfo().lastModified();
+            if (aModified != bModified) {
+                return aModified > bModified;
+            }
+            return a->fileinfo().fileName() < b->fileinfo().fileName();
+        });
+        for (const auto* mod : copies.mid(1)) {
+            older << mod->fileinfo().fileName();
+        }
+    }
+    return older;
+}
+
 void ModFolderModel::updateDuplicates()
 {
     QHash<QString, QList<Mod*>> byId;
@@ -614,7 +647,7 @@ QList<Mod*> ModFolderModel::requiredMods(const QString& id) const
 
 bool ModFolderModel::setModsEnabled(const QModelIndexList& indexes, EnableAction action)
 {
-    const bool ok = ResourceFolderModel::setResourceEnabled(indexes, action);
+    const bool ok = applyEnableAction(indexes, action);
     updateDuplicates();
     return ok;
 }

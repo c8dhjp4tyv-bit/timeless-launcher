@@ -90,7 +90,10 @@ class ModFolderModel : public ResourceFolderModel {
     bool isValid();
 
     bool setResourceEnabled(const QModelIndexList& indexes, EnableAction action) override;
-    /** Enables or disables exactly these mods, without asking about the mods they need or the mods that need them */
+    /**
+     * Enables or disables exactly these mods, without asking about the mods they need or the mods that need them, or whether to
+     * go ahead while the instance is running
+     */
     bool setModsEnabled(const QModelIndexList& indexes, EnableAction action);
     bool deleteResources(const QModelIndexList& indexes) override;
 
@@ -112,6 +115,11 @@ class ModFolderModel : public ResourceFolderModel {
 
     /** The file names of each set of enabled mods that share a mod ID and would all be read by one of these loaders */
     QList<QStringList> duplicateGroups(ModPlatform::ModLoaderTypes loaders);
+    /**
+     * Of each set that duplicateGroups() gives, the file names of every copy but the one to keep, which is the one with the latest
+     * version, or among those with the same version, the file changed last
+     */
+    QStringList olderDuplicates(ModPlatform::ModLoaderTypes loaders);
 
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;

@@ -15,7 +15,10 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <QDateTime>
 #include <QEventLoop>
+#include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -32,9 +35,9 @@ class DuplicateModsTest : public QObject {
         return jar.open() && jar.addFile(metadataFile, metadata) && jar.close();
     }
 
-    static bool writeFabricMod(const QString& path, const QString& id)
+    static bool writeFabricMod(const QString& path, const QString& id, const QString& version = "1.0.0")
     {
-        return writeJar(path, "fabric.mod.json", QString(R"({"schemaVersion": 1, "id": "%1", "version": "1.0.0"})").arg(id).toUtf8());
+        return writeJar(path, "fabric.mod.json", QString(R"({"schemaVersion": 1, "id": "%1", "version": "%2"})").arg(id, version).toUtf8());
     }
 
     static bool writeForgeMod(const QString& path, const QString& id)
@@ -132,6 +135,49 @@ class DuplicateModsTest : public QObject {
         QVERIFY(model.duplicatesOf("sodium-1.0.jar.disabled").isEmpty());
         QVERIFY(model.duplicateGroups(ModPlatform::Fabric).isEmpty());
         QCOMPARE(model.duplicateGroups(ModPlatform::Forge), create);
+    }
+
+    void olderDuplicates()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+
+        // the latest version stays, going by the numbers rather than the text
+        QVERIFY(writeFabricMod(mods.filePath("sodium-0.5.3.jar"), "sodium", "0.5.3"));
+        QVERIFY(writeFabricMod(mods.filePath("sodium-0.5.10.jar"), "sodium", "0.5.10"));
+        QVERIFY(writeFabricMod(mods.filePath("sodium-0.5.8.jar"), "sodium", "0.5.8"));
+        // with the same version, the file changed last stays
+        QVERIFY(writeFabricMod(mods.filePath("lithium-a.jar"), "lithium", "0.11.2"));
+        QVERIFY(writeFabricMod(mods.filePath("lithium-b.jar"), "lithium", "0.11.2"));
+        for (const auto& [fileName, modified] : { std::pair{ "lithium-a.jar", QDateTime(QDate(2026, 9, 1), QTime(12, 0)) },
+                                                  std::pair{ "lithium-b.jar", QDateTime(QDate(2026, 9, 20), QTime(12, 0)) } }) {
+            QFile file(mods.filePath(fileName));
+            QVERIFY(file.open(QIODevice::ReadWrite));
+            QVERIFY(file.setFileTime(modified, QFileDevice::FileModificationTime));
+        }
+        // not duplicates for Fabric
+        QVERIFY(writeFabricMod(mods.filePath("iris.jar"), "iris", "1.7.0"));
+        QVERIFY(writeForgeMod(mods.filePath("create-0.5.jar"), "create"));
+        QVERIFY(writeForgeMod(mods.filePath("create-0.6.jar"), "create"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY2(load(model), "The mods were never all read.");
+        QCOMPARE(model.rowCount(), 8);
+
+        auto older = model.olderDuplicates(ModPlatform::Fabric);
+        older.sort();
+        QCOMPARE(older, (QStringList{ "lithium-a.jar", "sodium-0.5.3.jar", "sodium-0.5.8.jar" }));
+
+        QModelIndexList indexes;
+        for (const auto& fileName : older) {
+            indexes << indexOf(model, fileName);
+        }
+        QVERIFY(model.setModsEnabled(indexes, EnableAction::DISABLE));
+        QVERIFY(model.duplicateGroups(ModPlatform::Fabric).isEmpty());
+        QVERIFY(model.olderDuplicates(ModPlatform::Fabric).isEmpty());
+        QVERIFY(QFileInfo::exists(mods.filePath("sodium-0.5.10.jar")));
+        QVERIFY(QFileInfo::exists(mods.filePath("lithium-b.jar")));
+        QVERIFY(QFileInfo::exists(mods.filePath("sodium-0.5.3.jar.disabled")));
     }
 };
 
