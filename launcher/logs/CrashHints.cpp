@@ -70,6 +70,16 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
                      .arg(unknown.captured(1));
     }
 
+    // Java takes the first argument that isn't an option for the class to run, and the launcher's own class comes after the JVM
+    // arguments. When that goes wrong for the launcher's class itself, it may be for several reasons, so that gets no hint.
+    static const QRegularExpression s_mainClassNotFound(R"(Error: Could not find or load main class (\S+))");
+    if (const auto mainClass = s_mainClassNotFound.match(log); mainClass.hasMatch() && !mainClass.captured(1).endsWith(".EntryPoint")) {
+        hints << tr("Java took %1 for the class to run, so it must be in the JVM arguments without being an option: an argument there "
+                    "is probably missing the - in front of it, or has a path with spaces that isn't in quotes. Check the JVM arguments "
+                    "in the Java tab of this instance's settings and in the launcher's settings.")
+                     .arg(mainClass.captured(1));
+    }
+
     static const QRegularExpression s_heapReservation(
         R"(Could not reserve enough space for (?:\d+KB )?object heap|Invalid maximum heap size)");
     if (log.contains(s_heapReservation)) {

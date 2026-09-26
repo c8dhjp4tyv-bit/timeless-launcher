@@ -104,6 +104,18 @@ class CrashHintsTest : public QObject {
                                              "Error: Could not create the Java Virtual Machine.\n"
                                           << 8 << QList<QStringList>{ { "--add-opens", "too old" } };
 
+        // what Java 21 printed with "Xms128m" among the JVM arguments
+        QTest::newRow("JVM argument without a dash") << "Error: Could not find or load main class Xms128m\n"
+                                                        "Caused by: java.lang.ClassNotFoundException: Xms128m\n"
+                                                     << 21 << QList<QStringList>{ { "Java took Xms128m", "missing the -" } };
+
+        QTest::newRow("JVM argument without a dash, Java 8") << "Error: Could not find or load main class Files\\Java\\agent.jar\n"
+                                                             << 8 << QList<QStringList>{ { "Java took Files\\Java\\agent.jar" } };
+
+        QTest::newRow("launcher's own class not found") << "Error: Could not find or load main class org.timelesslauncher.EntryPoint\n"
+                                                           "Caused by: java.lang.ClassNotFoundException: org.timelesslauncher.EntryPoint\n"
+                                                        << 21 << QList<QStringList>{};
+
         QTest::newRow("experimental option")
             << "Error: VM option 'UseZGC' is experimental and must be enabled via -XX:+UnlockExperimentalVMOptions.\n"
                "Error: Could not create the Java Virtual Machine.\n"
