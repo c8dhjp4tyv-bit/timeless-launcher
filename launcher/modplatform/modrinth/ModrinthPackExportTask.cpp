@@ -84,8 +84,10 @@ void ModrinthPackExportTask::collectFiles()
     pendingHashes.clear();
     resolvedFiles.clear();
 
+    // once: a later refresh of the mod list must not start hashing and zipping all over again
+    connect(instance->loaderModList(), &ModFolderModel::updateFinished, this, &ModrinthPackExportTask::collectHashes,
+            Qt::SingleShotConnection);
     instance->loaderModList()->update();
-    connect(instance->loaderModList(), &ModFolderModel::updateFinished, this, &ModrinthPackExportTask::collectHashes);
 }
 
 void ModrinthPackExportTask::collectHashes()
