@@ -215,15 +215,48 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
     // A mod that failed to change the game's code, usually because it was made for another version of the game
     static const QRegularExpression s_mixinFailedForMod(R"(Mixin apply for mod ([\w.-]+) failed)");
     static const QRegularExpression s_mixinFailedInConfig(R"(in config \[([^\]]+)\] FAILED during)");
-    if (const auto mixin = s_mixinFailedForMod.match(log); mixin.hasMatch()) {
+    const auto mixin = s_mixinFailedForMod.match(log);
+    const auto mixinConfig = s_mixinFailedInConfig.match(log);
+    if (mixin.hasMatch()) {
         hints << tr("The mod %1 couldn't make its changes to the game's code. It may not be made for this version of Minecraft or "
                     "of the mod loader, or another mod clashes with it: update it, or take it out to see whether the game starts.")
                      .arg(mixin.captured(1));
-    } else if (const auto config = s_mixinFailedInConfig.match(log); config.hasMatch()) {
+    } else if (mixinConfig.hasMatch()) {
         hints << tr("A mod couldn't make its changes to the game's code (the mixins in %1). It may not be made for this version "
                     "of Minecraft or of the mod loader, or another mod clashes with it: update it, or take it out to see whether "
                     "the game starts.")
-                     .arg(config.captured(1));
+                     .arg(mixinConfig.captured(1));
+    }
+
+    // A mod that ran into an error while the game started, as the mod loader names it. A failed mixin shows up in whichever
+    // mod's code happens to load the class first, so the hint above names the one to blame then.
+    static const QRegularExpression s_entrypointFailed(
+        R"((?:Could not execute entrypoint stage '\w+' due to errors, provided by|Exception while loading entries for entrypoint '\w+' provided by) '([^']+)')");
+    static const QRegularExpression s_modFailed(
+        R"(Failure message: ([^\n]+?) \(([\w.-]+)\) (?:has failed to load correctly|encountered an error during the))");
+    static const QRegularExpression s_modFailedBefore1_13(R"(Caught exception from ([^\n]+) \(([\w.-]+)\)\s*$)",
+                                                          QRegularExpression::MultilineOption);
+    QStringList failedMods;
+    if (!mixin.hasMatch() && !mixinConfig.hasMatch()) {
+        for (auto matches = s_entrypointFailed.globalMatch(log); matches.hasNext();) {
+            failedMods << matches.next().captured(1);
+        }
+        for (const auto* pattern : { &s_modFailed, &s_modFailedBefore1_13 }) {
+            for (auto matches = pattern->globalMatch(log); matches.hasNext();) {
+                const auto match = matches.next();
+                failedMods << tr("%1 (%2)").arg(match.captured(1).trimmed(), match.captured(2));
+            }
+        }
+        failedMods.removeDuplicates();
+    }
+    if (failedMods.size() == 1) {
+        hints << tr("The game crashed while the mod %1 was starting. Update it, or take it out to see whether the game starts. The "
+                    "lines starting with \"Caused by\" above say what went wrong.")
+                     .arg(failedMods.first());
+    } else if (!failedMods.isEmpty()) {
+        hints << tr("The game crashed while these mods were starting: %1. Update them, or take them out to see whether the game "
+                    "starts. The lines starting with \"Caused by\" above say what went wrong.")
+                     .arg(failedMods.join(", "));
     }
 
     return hints;

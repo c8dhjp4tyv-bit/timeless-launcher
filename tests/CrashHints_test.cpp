@@ -239,6 +239,49 @@ class CrashHintsTest : public QObject {
             << "Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [sodium.mixins.json:core.MixinWindow] from "
                "phase [DEFAULT] in config [sodium.mixins.json] FAILED during APPLY\n"
             << 17 << QList<QStringList>{ { "the mixins in sodium.mixins.json" } };
+
+        QTest::newRow("Fabric mod failing as it starts, logged and in the crash report")
+            << "[12:00:00] [Render thread/ERROR]: Unreported exception thrown!\n"
+               "java.lang.RuntimeException: Could not execute entrypoint stage 'client' due to errors, provided by 'examplemod' at "
+               "'com.example.ExampleClient'!\n"
+               "\tat net.fabricmc.loader.impl.FabricLoaderImpl.lambda$invokeEntrypoints$2(FabricLoaderImpl.java:388)\n"
+               "Caused by: java.lang.NullPointerException: Cannot invoke \"Object.toString()\" because \"value\" is null\n"
+               "---- Minecraft Crash Report ----\n"
+               "java.lang.RuntimeException: Could not execute entrypoint stage 'client' due to errors, provided by 'examplemod' at "
+               "'com.example.ExampleClient'!\n"
+            << 17 << QList<QStringList>{ { "while the mod examplemod was starting", "Caused by" } };
+
+        QTest::newRow("Fabric mod whose entrypoint can't be made")
+            << "net.fabricmc.loader.api.EntrypointException: Exception while loading entries for entrypoint 'main' provided by "
+               "'examplemod'\n"
+               "Caused by: java.lang.ClassNotFoundException: com.example.ExampleMod\n"
+            << 17 << QList<QStringList>{ { "while the mod examplemod was starting" } };
+
+        QTest::newRow("Forge mod failing to load")
+            << "-- MOD examplemod --\n"
+               "Details:\n"
+               "\tMod File: /home/player/.minecraft/mods/examplemod-1.0.jar\n"
+               "\tFailure message: Example Mod (examplemod) has failed to load correctly\n"
+               "\t\tjava.lang.NullPointerException: Cannot invoke \"String.length()\" because \"name\" is null\n"
+            << 17 << QList<QStringList>{ { "while the mod Example Mod (examplemod) was starting" } };
+
+        QTest::newRow("Forge mods failing in an event")
+            << "\tFailure message: Example Mod (examplemod) encountered an error during the common_setup event phase\n"
+               "\tFailure message: Just Enough Items (JEI) (jei) encountered an error during the load_complete event phase\n"
+            << 17 << QList<QStringList>{ { "these mods were starting: Example Mod (examplemod), Just Enough Items (JEI) (jei)" } };
+
+        QTest::newRow("Forge 1.12.2 mod failing")
+            << "net.minecraftforge.fml.common.LoaderExceptionModCrash: Caught exception from Just Enough Items (JEI) (jei)\n"
+               "Caused by: java.lang.NullPointerException\n"
+            << 8 << QList<QStringList>{ { "while the mod Just Enough Items (JEI) (jei) was starting" } };
+
+        // the mixin that failed belongs to another mod than the one that happened to be starting
+        QTest::newRow("mod starting when a mixin fails")
+            << "java.lang.RuntimeException: Could not execute entrypoint stage 'client' due to errors, provided by 'sodium' at "
+               "'me.jellysquid.mods.sodium.client.SodiumClientMod'!\n"
+               "Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [iris.mixins.json:MixinGameRenderer] from "
+               "phase [DEFAULT] in config [iris.mixins.json] FAILED during APPLY\n"
+            << 17 << QList<QStringList>{ { "the mixins in iris.mixins.json" } };
     }
 
     void find()
