@@ -37,6 +37,9 @@
 #include <QScrollBar>
 #include <QTextBlock>
 #include <QTextDocumentFragment>
+#include <QTimer>
+
+#include "launch/LogModel.h"
 
 LogView::LogView(QWidget* parent) : QPlainTextEdit(parent)
 {
@@ -69,6 +72,62 @@ void LogView::setColorLines(bool colorLines)
     repopulate();
 }
 
+void LogView::setMinimumLevel(MessageLevel level)
+{
+    if (m_minimumLevel == level) {
+        return;
+    }
+    m_minimumLevel = level;
+    redisplay();
+}
+
+void LogView::redisplay()
+{
+    // the line the cursor is on if it's in view, such as one Find went to
+    auto cursor = textCursor();
+    if (!viewport()->rect().contains(cursorRect(cursor).center())) {
+        auto* bar = verticalScrollBar();
+        if (bar->value() == bar->maximum()) {
+            // at the end of the log, the view keeps up with it
+            m_scroll = true;
+            repopulate();
+            return;
+        }
+        // otherwise the one in the middle
+        cursor = cursorForPosition(viewport()->rect().center());
+    }
+    const auto block = cursor.block();
+    const int row = block.userState();
+    int lineOfRow = 0;
+    for (auto previous = block.previous(); previous.isValid() && previous.userState() == row; previous = previous.previous()) {
+        lineOfRow++;
+    }
+
+    m_scroll = false;
+    repopulate();
+    if (row >= 0) {
+        // once the lines are laid out
+        QTimer::singleShot(0, this, [this, row, lineOfRow] { showLine(row, lineOfRow); });
+    }
+}
+
+void LogView::showLine(int row, int lineOfRow)
+{
+    auto block = document()->firstBlock();
+    while (block.isValid() && block.userState() < row) {
+        block = block.next();
+    }
+    if (!block.isValid()) {
+        scrollToBottom();
+        return;
+    }
+    for (int line = 0; line < lineOfRow && block.userState() == row && block.next().userState() == row; line++) {
+        block = block.next();
+    }
+    setTextCursor(QTextCursor(block));
+    centerCursor();
+}
+
 void LogView::setModel(QAbstractItemModel* model)
 {
     if (m_model) {
@@ -78,6 +137,7 @@ void LogView::setModel(QAbstractItemModel* model)
         disconnect(m_model, &QAbstractItemModel::rowsRemoved, this, &LogView::rowsRemoved);
     }
     m_model = model;
+    m_rowsRemoved = 0;
     if (m_model) {
         connect(m_model, &QAbstractItemModel::modelReset, this, &LogView::repopulate);
         connect(m_model, &QAbstractItemModel::rowsInserted, this, &LogView::rowsInserted);
@@ -129,11 +189,17 @@ void LogView::rowsInserted(const QModelIndex& parent, int first, int last)
 {
     QTextDocument document;
     QTextCursor cursor(&document);
+    // for each line, the row it comes from, counted the way m_rowsRemoved describes
+    QList<int> rows;
 
     cursor.movePosition(QTextCursor::End);
     cursor.beginEditBlock();
     for (int i = first; i <= last; i++) {
         auto idx = m_model->index(i, 0, parent);
+        const MessageLevel level = static_cast<MessageLevel::Enum>(m_model->data(idx, LogModel::LevelRole).toInt());
+        if (level < m_minimumLevel) {
+            continue;
+        }
         auto text = m_model->data(idx, Qt::DisplayRole).toString();
         QTextCharFormat format(*m_defaultFormat);
         auto font = m_model->data(idx, Qt::FontRole);
@@ -149,14 +215,26 @@ void LogView::rowsInserted(const QModelIndex& parent, int first, int last)
             format.setBackground(bg.value<QColor>());
         }
         cursor.insertText(text, format);
+        // one row can take several lines
+        while (rows.size() <= cursor.blockNumber()) {
+            rows << m_rowsRemoved + i;
+        }
         cursor.insertBlock();
     }
     cursor.endEditBlock();
+    if (rows.isEmpty()) {
+        return;
+    }
 
     QTextDocumentFragment fragment(&document);
     QTextCursor workCursor = textCursor();
     workCursor.movePosition(QTextCursor::End);
+    const int start = workCursor.position();
     workCursor.insertFragment(fragment);
+    for (auto block = QPlainTextEdit::document()->findBlock(start); const int row : rows) {
+        block.setUserState(row);
+        block = block.next();
+    }
 
     if (m_scroll && !m_scrolling) {
         m_scrolling = true;
@@ -166,10 +244,9 @@ void LogView::rowsInserted(const QModelIndex& parent, int first, int last)
 
 void LogView::rowsRemoved(const QModelIndex& parent, int first, int last)
 {
-    // TODO: some day... maybe
+    // TODO: take the lines out some day... maybe
     Q_UNUSED(parent)
-    Q_UNUSED(first)
-    Q_UNUSED(last)
+    m_rowsRemoved += last - first + 1;
 }
 
 void LogView::scrollToBottom()

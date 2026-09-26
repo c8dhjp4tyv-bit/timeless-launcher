@@ -471,6 +471,11 @@ void OtherLogsPage::on_colorCheckbox_clicked(bool checked)
     ui->text->scrollToBottom();
 }
 
+void OtherLogsPage::on_levelFilterBox_currentIndexChanged(int index)
+{
+    ui->text->setMinimumLevel(lowestLevelShown(index));
+}
+
 void OtherLogsPage::setControlsEnabled(const bool enabled)
 {
     if (m_instance) {
