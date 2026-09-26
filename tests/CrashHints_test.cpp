@@ -156,6 +156,14 @@ class CrashHintsTest : public QObject {
         QTest::newRow("native crash in Mesa") << "# Problematic frame:\n# C  [radeonsi_dri.so+0x5d2a61]\n"
                                               << 17 << QList<QStringList>{ { "graphics driver (radeonsi_dri.so)" } };
 
+        QTest::newRow("native crash in an Intel Mac's driver")
+            << "# Problematic frame:\n# C  [AMDRadeonX6000GLDriver+0x2d7c1]\n"
+            << 17 << QList<QStringList>{ { "graphics driver (AMDRadeonX6000GLDriver)" } };
+
+        QTest::newRow("native crash in OpenGL on Apple's chips")
+            << "# Problematic frame:\n# C  [AppleMetalOpenGLRenderer+0x1e7d8]  GLDContextRec::flushContextInternal()+0x80\n"
+            << 17 << QList<QStringList>{ { "graphics driver (AppleMetalOpenGLRenderer)" } };
+
         QTest::newRow("native crash elsewhere")
             << "# Problematic frame:\n"
                "# C  [lwjgl.dll+0xd28b]\n"

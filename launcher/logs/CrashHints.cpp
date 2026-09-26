@@ -145,9 +145,10 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
     // Java crashing in native code, which it reports in lines starting with #, naming the library it crashed in
     static const QRegularExpression s_problematicFrame(R"(# Problematic frame:\s*\n#\s+\w\s+\[([^\]+]+))");
     static const QRegularExpression s_errorReport(R"(# An error report file with more information is saved as:\s*\n#\s*([^\n]+))");
-    // the OpenGL drivers of AMD, NVIDIA and Intel on Windows, NVIDIA's and Mesa's on Linux, and the ones macOS comes with
+    // the OpenGL drivers of AMD, NVIDIA and Intel on Windows, NVIDIA's and Mesa's on Linux, and the ones macOS comes with: a
+    // driver per graphics card on Intel Macs, and OpenGL on top of Metal on Apple's own chips
     static const QRegularExpression s_graphicsDriver(
-        R"(^(?:(?:atio6axx|atioglxx|nvoglv32|nvoglv64|ig\w*icd32|ig\w*icd64)\.dll|lib(?:nvidia-glcore|nvidia-eglcore|GLX_nvidia|GLX_mesa)\.so.*|libgallium-.*\.so|\w+_dri\.so|\w+GLDriver)$)",
+        R"(^(?:(?:atio6axx|atioglxx|nvoglv32|nvoglv64|ig\w*icd32|ig\w*icd64)\.dll|lib(?:nvidia-glcore|nvidia-eglcore|GLX_nvidia|GLX_mesa)\.so.*|libgallium-.*\.so|\w+_dri\.so|\w+GLDriver|AppleMetalOpenGLRenderer|GLEngine)$)",
         QRegularExpression::CaseInsensitiveOption);
     if (const auto frame = s_problematicFrame.match(log); frame.hasMatch()) {
         const auto library = frame.captured(1);
