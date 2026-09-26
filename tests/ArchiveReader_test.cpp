@@ -60,15 +60,27 @@ class ArchiveReaderTest : public QObject {
         QVERIFY(!QFile::exists(root + "/bin/link"));
     }
 
-   private:
-    /// libarchive refuses to extract through a symlinked path component. On macOS QTemporaryDir hands
-    /// back a path under /var, which is itself a symlink to /private/var, so the root has to be
-    /// resolved before anything is written into it.
-    static QString extractionRoot(const QTemporaryDir& temp)
+    void extractIntoLinkedFolder()
     {
-        auto canonical = QFileInfo(temp.path()).canonicalFilePath();
-        return canonical.isEmpty() ? QDir(temp.path()).absolutePath() : canonical;
+#ifdef Q_OS_WIN
+        QSKIP("Symbolic links need extra rights on Windows, and aren't resolved there");
+#endif
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        // like a data folder moved to another drive and linked back
+        QVERIFY(QDir(temp.path()).mkdir("elsewhere"));
+        QVERIFY(QFile::link(temp.filePath("elsewhere"), temp.filePath("data")));
+
+        QVERIFY(extractTo(QFINDTESTDATA("testdata/ArchiveReader/hard-link.tar"), temp.filePath("data/instance")));
+
+        QFile link(temp.filePath("elsewhere/instance/bin/link"));
+        QVERIFY(link.open(QIODevice::ReadOnly));
+        QCOMPARE(link.readAll(), QByteArrayLiteral("timeless\n"));
     }
+
+   private:
+    /// The folder to extract to, as QTemporaryDir gives it: on macOS that is under /var, which is a symlink to /private/var
+    static QString extractionRoot(const QTemporaryDir& temp) { return QDir(temp.path()).absolutePath(); }
 
     /// Unpacks every entry into `root` the way ExtractZipTask does, by handing each one an absolute
     /// target path inside the extraction directory.

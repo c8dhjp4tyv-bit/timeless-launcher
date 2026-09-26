@@ -172,6 +172,35 @@ static bool willEscapeRoot(const QDir& root, archive_entry* entry)
     return !rootDir.isParentOf(QUrl::fromLocalFile(QDir::cleanPath(linkTarget)));
 }
 
+/// The path with the symbolic links along the part of it that already exists resolved.
+/// libarchive refuses to write through any symbolic link, including the ones above the folder being extracted to, which
+/// nothing in the archive can have made: a data or instances folder moved to another drive and linked back, or macOS's
+/// /var, which holds the temporary folders. Only those are resolved; links inside the extraction folder are still refused.
+static QString resolveSymlinks(const QString& path)
+{
+#ifdef Q_OS_WIN
+    // canonical paths turn mapped drives into network paths there, so leave them be
+    return path;
+#else
+    QString existing = QDir::cleanPath(path);
+    QStringList missing;
+    while (!QFileInfo::exists(existing)) {
+        const QFileInfo info(existing);
+        const auto parent = info.path();
+        if (parent == existing || parent == ".") {
+            return path;
+        }
+        missing.prepend(info.fileName());
+        existing = parent;
+    }
+    const auto canonical = QFileInfo(existing).canonicalFilePath();
+    if (canonical.isEmpty()) {
+        return path;
+    }
+    return missing.isEmpty() ? canonical : QDir(canonical).filePath(missing.join('/'));
+#endif
+}
+
 bool ArchiveReader::File::writeFile(archive* out, const QString& targetFileName, bool notBlock)
 {
     return writeFile(out, targetFileName, {}, notBlock);
@@ -184,7 +213,17 @@ bool ArchiveReader::File::writeFile(archive* out, const QString& targetFileName,
     if (!targetFileName.isEmpty()) {
         entryClone.reset(archive_entry_clone(m_entry));
         entry = entryClone.get();
-        auto nameUtf8 = targetFileName.toUtf8();
+
+        // Resolve the links above the extraction folder (the file's own folder, without one), keeping the file where it is in there
+        auto targetPath = targetFileName;
+        const auto base = root.has_value() ? root->absolutePath() : QFileInfo(targetFileName).absolutePath();
+        if (const auto resolvedBase = resolveSymlinks(base); resolvedBase != base && targetFileName.startsWith(base + '/')) {
+            targetPath = resolvedBase + targetFileName.mid(base.size());
+            if (root.has_value()) {
+                root = QDir(resolvedBase);
+            }
+        }
+        auto nameUtf8 = targetPath.toUtf8();
         archive_entry_set_pathname_utf8(entry, nameUtf8.constData());
 
         // A hard link target names another entry of the archive, so it has to be rebased along with the
