@@ -275,6 +275,65 @@ class CrashHintsTest : public QObject {
                "Caused by: java.lang.NullPointerException\n"
             << 8 << QList<QStringList>{ { "while the mod Just Enough Items (JEI) (jei) was starting" } };
 
+        QTest::newRow("Forge crash report suspecting a mod")
+            << "---- Minecraft Crash Report ----\n"
+               "Description: Rendering overlay\n"
+               "\n"
+               "-- Head --\n"
+               "Thread: Render thread\n"
+               "Suspected Mod: \n"
+               "\tOculus (oculus), Version: 1.6.9\n"
+               "\t\tIssue tracker URL: https://github.com/Asek3/Oculus/issues\n"
+               "\t\tat TRANSFORMER/oculus@1.6.9/net.coderbot.iris.pipeline.WorldRenderingPipeline.render(WorldRenderingPipeline.java:42)\n"
+               "Stacktrace:\n"
+               "\tat net.minecraft.client.renderer.GameRenderer.m_109093_(GameRenderer.java:954)\n"
+            << 17 << QList<QStringList>{ { "points to the mod Oculus (oculus) 1.6.9" } };
+
+        // one of them through a mixin of its own, and with a blank line between them
+        QTest::newRow("Forge crash report suspecting mods")
+            << "Suspected Mods: \n"
+               "\tCreate (create), Version: 0.5.1.f\n"
+               "\t\tIssue tracker URL: https://github.com/Creators-of-Create/Create/issues\n"
+               "\t\tat TRANSFORMER/create@0.5.1.f/com.simibubi.create.Create.tick(Create.java:1)\n"
+               "\n"
+               "\tExample Mod (examplemod), Version: 1.0\n"
+               "\t\tMixin class: com.example.mixin.LevelMixin\n"
+               "\t\tTarget: net.minecraft.world.level.Level\n"
+               "\t\tat net.minecraft.world.level.Level.handler$zza000$examplemod$tick(Level.java:1)\n"
+               "Stacktrace:\n"
+               "\tat net.minecraft.world.level.Level.m_46653_(Level.java:479)\n"
+            << 17 << QList<QStringList>{ { "these mods: Create (create) 0.5.1.f, Example Mod (examplemod) 1.0" } };
+
+        QTest::newRow("Forge crash report suspecting none") << "Suspected Mods: NONE\nStacktrace:\n" << 17 << QList<QStringList>{};
+
+        QTest::newRow("suspected mod with brackets in its name")
+            << "Suspected Mod: \n"
+               "\tExample Mod (Forge Edition) (examplemod), Version: 1.0\n"
+               "\t\tat TRANSFORMER/examplemod@1.0/com.example.Mod.render(Mod.java:42)\n"
+               "Stacktrace:\n"
+            << 17 << QList<QStringList>{ { "the mod Example Mod (Forge Edition) (examplemod) 1.0" } };
+
+        // a crash of the integrated server ends the game with a crash report of its own, suspecting the same mod
+        QTest::newRow("suspected mod in two crash reports")
+            << "Suspected Mod: \n"
+               "\tCreate (create), Version: 0.5.1.f\n"
+               "\t\tat TRANSFORMER/create@0.5.1.f/com.simibubi.create.Create.tick(Create.java:1)\n"
+               "Stacktrace:\n"
+               "Suspected Mod: \n"
+               "\tCreate (create), Version: 0.5.1.f\n"
+               "\t\tat TRANSFORMER/create@0.5.1.f/com.simibubi.create.Create.tick(Create.java:1)\n"
+               "Stacktrace:\n"
+            << 17 << QList<QStringList>{ { "the mod Create (create) 0.5.1.f" } };
+
+        // a cause that is known comes first, and a mod that happened to be allocating isn't to blame for running out of memory
+        QTest::newRow("suspected mod when out of memory")
+            << "java.lang.OutOfMemoryError: Java heap space\n"
+               "Suspected Mod: \n"
+               "\tCreate (create), Version: 0.5.1.f\n"
+               "\t\tat TRANSFORMER/create@0.5.1.f/com.simibubi.create.Create.tick(Create.java:1)\n"
+               "Stacktrace:\n"
+            << 17 << QList<QStringList>{ { "ran out of memory" } };
+
         // the mixin that failed belongs to another mod than the one that happened to be starting
         QTest::newRow("mod starting when a mixin fails")
             << "java.lang.RuntimeException: Could not execute entrypoint stage 'client' due to errors, provided by 'sodium' at "

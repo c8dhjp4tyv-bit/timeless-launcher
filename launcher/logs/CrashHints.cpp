@@ -259,5 +259,31 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
                      .arg(failedMods.join(", "));
     }
 
+    // Forge's crash reports list the mods whose code the crash went through, leaving out the game and Forge itself: each mod on a
+    // line indented once, what points to it on the lines under it, and a blank line between mods. That is only a lead, so it is
+    // given when nothing above explains the crash.
+    static const QRegularExpression s_suspectedMods(R"(Suspected Mods?: *\n((?:\t.*\n|\n)+))");
+    static const QRegularExpression s_suspectedMod(R"(^\t([^\t\n]+) \(([\w.-]+)\), Version: (.*)$)", QRegularExpression::MultilineOption);
+    QStringList suspects;
+    if (hints.isEmpty()) {
+        for (auto blocks = s_suspectedMods.globalMatch(log); blocks.hasNext();) {
+            for (auto mods = s_suspectedMod.globalMatch(blocks.next().captured(1)); mods.hasNext();) {
+                const auto mod = mods.next();
+                suspects << tr("%1 (%2) %3").arg(mod.captured(1), mod.captured(2), mod.captured(3).trimmed());
+            }
+        }
+        suspects.removeDuplicates();
+    }
+    if (suspects.size() == 1) {
+        hints << tr("The crash report points to the mod %1: the crash went through its code. It may not be at fault itself, but "
+                    "updating it, or taking it out to see whether the game still crashes, is the first thing to try.")
+                     .arg(suspects.first());
+    } else if (!suspects.isEmpty()) {
+        hints << tr("The crash report points to these mods: %1. The crash went through their code. They may not be at fault "
+                    "themselves, but updating them, or taking them out to see whether the game still crashes, is the first thing "
+                    "to try.")
+                     .arg(suspects.join(", "));
+    }
+
     return hints;
 }
