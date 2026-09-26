@@ -163,6 +163,8 @@ set(LAUNCH_SOURCES
     launch/LogModel.h
     launch/TaskStepWrapper.cpp
     launch/TaskStepWrapper.h
+    logs/CrashHints.cpp
+    logs/CrashHints.h
     logs/LogParser.cpp
     logs/LogParser.h
 )

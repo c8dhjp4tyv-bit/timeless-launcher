@@ -40,7 +40,9 @@
 
 #include "Application.h"
 #include "FileSystem.h"
+#include "java/JavaVersion.h"
 #include "launch/LaunchTask.h"
+#include "logs/CrashHints.h"
 #include "minecraft/MinecraftInstance.h"
 
 #ifdef Q_OS_LINUX
@@ -172,6 +174,9 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
         case LoggedProcess::Crashed: {
             m_parent->setPid(-1);
             m_parent->instance()->setMinecraftRunning(false);
+            if (state == LoggedProcess::Crashed) {
+                logCrashHints();
+            }
             emitFailed(tr("Game crashed."));
             return;
         }
@@ -186,6 +191,7 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
             // if the exit code wasn't 0, report this as a crash
             auto exitCode = m_process.exitCode();
             if (exitCode != 0) {
+                logCrashHints();
                 emitFailed(tr("Game crashed."));
                 return;
             }
@@ -206,6 +212,19 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
             break;
         default:
             break;
+    }
+}
+
+void LauncherPartLaunch::logCrashHints()
+{
+    const JavaVersion javaVersion(m_parent->instance()->settings()->get("JavaVersion").toString());
+    const auto hints = CrashHints::find(m_parent->getLogModel()->toPlainText(), javaVersion.major());
+    if (hints.isEmpty()) {
+        return;
+    }
+    emit logLine(tr("The log points to what went wrong:"), MessageLevel::Launcher);
+    for (const auto& hint : hints) {
+        emit logLine("  - " + hint, MessageLevel::Launcher);
     }
 }
 
