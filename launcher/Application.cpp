@@ -789,6 +789,10 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("RecordGameTime", true);
         m_settings->registerSetting("ShowGameTimeWithoutDays", false);
 
+        // World backups
+        m_settings->registerSetting("BackUpWorldsBeforeLaunch", false);
+        m_settings->registerSetting("WorldBackupsToKeep", 5);
+
         // Minecraft mods
         m_settings->registerSetting("ModMetadataDisabled", false);
         m_settings->registerSetting("ModDependenciesDisabled", false);

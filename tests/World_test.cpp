@@ -33,6 +33,7 @@
 #include <archive/ArchiveWriter.h>
 #include <archive/ExportToZipTask.h>
 #include <minecraft/World.h>
+#include <minecraft/WorldBackups.h>
 #include <minecraft/WorldList.h>
 
 class WorldTest : public QObject {
@@ -60,6 +61,15 @@ class WorldTest : public QObject {
         World world{ QFileInfo(worldFolder) };
         world.loadMetadata();
         return world.name();
+    }
+
+    static QStringList fileNames(const QFileInfoList& files)
+    {
+        QStringList names;
+        for (const auto& file : files) {
+            names << file.fileName();
+        }
+        return names;
     }
 
     /// Runs the task to its end, and tells whether it succeeded
@@ -183,6 +193,66 @@ class WorldTest : public QObject {
 
         // the list reads the worlds' details on other threads, which have to be done before it goes away
         QThreadPool::globalInstance()->waitForDone();
+    }
+
+    void backupWhenChanged()
+    {
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const auto saves = temp.filePath("saves");
+        const QFileInfo world(FS::PathCombine(saves, "MyWorld"));
+        const auto levelDatPath = FS::PathCombine(world.absoluteFilePath(), "level.dat");
+        FS::write(levelDatPath, levelDat("My World"));
+        const auto automatic = WorldBackups::automaticBackupDir(saves);
+        QCOMPARE(automatic, QDir::cleanPath(temp.filePath("backups/automatic")));
+
+        // a world without a backup needs one
+        QVERIFY(WorldBackups::changedSinceBackup(world, automatic));
+        auto task = WorldBackups::createTask(world, automatic);
+        QVERIFY(task);
+        QVERIFY(run(*task));
+
+        // and doesn't once it has one, until the game saves it again
+        QVERIFY(!WorldBackups::changedSinceBackup(world, automatic));
+        QFile levelDatFile(levelDatPath);
+        QVERIFY(levelDatFile.open(QIODevice::ReadWrite));
+        QVERIFY(levelDatFile.setFileTime(QDateTime::currentDateTime().addSecs(60), QFileDevice::FileModificationTime));
+        levelDatFile.close();
+        QVERIFY(WorldBackups::changedSinceBackup(world, automatic));
+    }
+
+    void removeOldBackups()
+    {
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const QStringList backups = {
+            "2025-12-30_23-59-59_New World.zip", "2026-01-01_10-00-00_New World.zip", "2026-01-02_10-00-00_New World.zip",
+            "2026-01-03_10-00-00_New World.zip", "2026-01-04_10-00-00_New World.zip", "2026-01-05_10-00-00_New World.zip",
+            "2026-01-06_10-00-00_New World.zip",
+        };
+        // the game names a second world called New World "New World (1)", and those are its backups, not the first one's
+        const QStringList others = {
+            "2025-01-01_10-00-00_New World (1).zip", "2026-01-02_10-00-00_New World (1).zip",
+            "2026-01-01_10-00-00_New World 2.zip",   "New World.zip",
+            "2026-01-01_10-00-00_New World.zip.txt",
+        };
+        for (const auto& name : backups + others) {
+            FS::write(FS::PathCombine(temp.path(), name), "zip");
+        }
+
+        QCOMPARE(fileNames(WorldBackups::backupsOf(temp.path(), "New World")), backups);
+        QCOMPARE(WorldBackups::removeOldBackups(temp.path(), "New World", 5), backups.mid(0, 2));
+        QCOMPARE(fileNames(WorldBackups::backupsOf(temp.path(), "New World")), backups.mid(2));
+        for (const auto& name : others) {
+            QVERIFY2(QFileInfo::exists(FS::PathCombine(temp.path(), name)), qPrintable(name));
+        }
+        QCOMPARE(fileNames(WorldBackups::backupsOf(temp.path(), "New World (1)")), others.mid(0, 2));
+
+        // the newest one always stays
+        QCOMPARE(WorldBackups::removeOldBackups(temp.path(), "New World", 0).size(), 4);
+        QCOMPARE(fileNames(WorldBackups::backupsOf(temp.path(), "New World")), QStringList{ backups.last() });
     }
 };
 

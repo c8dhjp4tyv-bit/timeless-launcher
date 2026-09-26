@@ -370,6 +370,69 @@ It is most likely you will need to change the path - please refer to the mod's w
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="worldBackupsGroupBox">
+             <property name="title">
+              <string>World &amp;Backups</string>
+             </property>
+             <layout class="QVBoxLayout" name="worldBackupsLayout">
+              <item>
+               <widget class="QCheckBox" name="backUpWorldsBeforeLaunch">
+                <property name="text">
+                 <string>&amp;Automatically back up the worlds played since their last backup before launching</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="worldBackupsToKeepLayout">
+                <item>
+                 <widget class="QLabel" name="worldBackupsToKeepLabel">
+                  <property name="text">
+                   <string>Automatic backups to &amp;keep of each world:</string>
+                  </property>
+                  <property name="buddy">
+                   <cstring>worldBackupsToKeep</cstring>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QSpinBox" name="worldBackupsToKeep">
+                  <property name="minimum">
+                   <number>1</number>
+                  </property>
+                  <property name="maximum">
+                   <number>100</number>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="worldBackupsToKeepSpacer">
+                  <property name="orientation">
+                   <enum>Qt::Horizontal</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>0</width>
+                    <height>0</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <widget class="QLabel" name="worldBackupsInfo">
+                <property name="text">
+                 <string>They go to backups/automatic in the game folder, and the oldest are deleted once there are more. Other backups, like the ones made with Back Up on the Worlds page, are never deleted.</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <widget class="QGroupBox" name="instanceAccountGroupBox">
              <property name="title">
               <string>Override &amp;Default Account</string>

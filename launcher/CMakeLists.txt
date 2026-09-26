@@ -277,6 +277,8 @@ set(MINECRAFT_SOURCES
     minecraft/launch/VerifyJavaInstall.h
     minecraft/launch/AutoInstallJava.cpp
     minecraft/launch/AutoInstallJava.h
+    minecraft/launch/BackupWorlds.cpp
+    minecraft/launch/BackupWorlds.h
 
     minecraft/GradleSpecifier.h
     minecraft/MinecraftInstance.cpp
@@ -314,6 +316,8 @@ set(MINECRAFT_SOURCES
     minecraft/VersionFilterData.cpp
     minecraft/World.h
     minecraft/World.cpp
+    minecraft/WorldBackups.h
+    minecraft/WorldBackups.cpp
     minecraft/WorldList.h
     minecraft/WorldList.cpp
     minecraft/WorldTasks.h
