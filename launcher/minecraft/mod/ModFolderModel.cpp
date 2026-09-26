@@ -606,6 +606,19 @@ QStringList ModFolderModel::requiredByList(const QString& id) const
     return reqToList(m_requiredBy.value(id));
 }
 
+QList<Mod*> ModFolderModel::requiredMods(const QString& id) const
+{
+    const auto mods = m_requires.value(id);
+    return { mods.begin(), mods.end() };
+}
+
+bool ModFolderModel::setModsEnabled(const QModelIndexList& indexes, EnableAction action)
+{
+    const bool ok = ResourceFolderModel::setResourceEnabled(indexes, action);
+    updateDuplicates();
+    return ok;
+}
+
 bool ModFolderModel::deleteResources(const QModelIndexList& indexes)
 {
     auto deleteInvalid = [](QSet<Mod*>& mods) {

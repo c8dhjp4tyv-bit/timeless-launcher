@@ -90,6 +90,8 @@ class ModFolderModel : public ResourceFolderModel {
     bool isValid();
 
     bool setResourceEnabled(const QModelIndexList& indexes, EnableAction action) override;
+    /** Enables or disables exactly these mods, without asking about the mods they need or the mods that need them */
+    bool setModsEnabled(const QModelIndexList& indexes, EnableAction action);
     bool deleteResources(const QModelIndexList& indexes) override;
 
     QModelIndexList getAffectedMods(const QModelIndexList& indexes, EnableAction action);
@@ -98,6 +100,8 @@ class ModFolderModel : public ResourceFolderModel {
 
    public:
     QStringList requiresList(const QString& id) const;
+    /** The mods in this folder that the mod with that ID needs */
+    QList<Mod*> requiredMods(const QString& id) const;
     QStringList requiredByList(const QString& id) const;
 
     /**

@@ -40,6 +40,7 @@
 
 #include <QPointer>
 #include "ExternalResourcesPage.h"
+#include "ui/dialogs/ModBisectDialog.h"
 #include "ui/dialogs/ResourceDownloadDialog.h"
 
 class ModFolderPage : public ExternalResourcesPage {
@@ -60,6 +61,8 @@ class ModFolderPage : public ExternalResourcesPage {
 
     virtual bool shouldDisplay() const override;
 
+    void openedImpl() override;
+
    public slots:
     void updateFrame(const QModelIndex& current, const QModelIndex& previous) override;
 
@@ -72,10 +75,13 @@ class ModFolderPage : public ExternalResourcesPage {
     void deleteModMetadata();
     void exportModMetadata();
     void changeModVersion();
+    void findProblemMod();
 
    protected:
     ModFolderModel* m_model;
     QPointer<ResourceDownload::ResourceDownloadDialog> m_downloadDialog;
+    QAction* m_findProblemModAction = nullptr;
+    QPointer<ModBisectDialog> m_bisectDialog;
 };
 
 class CoreModFolderPage : public ModFolderPage {
