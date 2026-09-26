@@ -13,12 +13,18 @@
 #include <QFileDialog>
 #include <memory>
 
+#include <QDir>
+#include <QFileInfo>
 #include "Application.h"
 #include "InstanceImportTask.h"
 #include "InstanceList.h"
 #include "InstanceTask.h"
 #include "Markdown.h"
 #include "StringUtils.h"
+#include "archive/ExportToZipTask.h"
+#include "minecraft/MinecraftInstance.h"
+#include "minecraft/WorldBackups.h"
+#include "tasks/SequentialTask.h"
 
 #include "ui/InstanceWindow.h"
 #include "ui/dialogs/CustomMessageBox.h"
@@ -282,10 +288,14 @@ void ManagedPackPage::onUpdateTaskCompleted(bool didSucceed) const
             m_instanceWindow->close();
         }
 
-        CustomMessageBox::selectable(nullptr, tr("Update Successful"),
-                                     tr("The instance updated to pack version %1 successfully.").arg(m_inst->getManagedPackVersionName()),
-                                     QMessageBox::Information)
-            ->show();
+        // a pack updated from a file may not say which version it is
+        const auto version = m_inst->getManagedPackVersionName();
+        auto message = version.isEmpty() ? tr("The instance was updated successfully.")
+                                         : tr("The instance updated to pack version %1 successfully.").arg(version);
+        if (!m_worldsBackedUpTo.isEmpty()) {
+            message += "\n\n" + tr("Its worlds were backed up to %1 first.").arg(m_worldsBackedUpTo);
+        }
+        CustomMessageBox::selectable(nullptr, tr("Update Successful"), message, QMessageBox::Information)->show();
     } else {
         CustomMessageBox::selectable(
             nullptr, tr("Update Failed"),
@@ -453,8 +463,66 @@ void FlameManagedPackPage::updateFromFile()
     updatePack(output, false);
 }
 
+bool ManagedPackPage::backUpWorlds()
+{
+    m_worldsBackedUpTo.clear();
+    auto* instance = dynamic_cast<MinecraftInstance*>(m_inst);
+    if (instance == nullptr || !instance->settings()->get("BackUpWorldsBeforeUpdate").toBool()) {
+        return true;
+    }
+
+    const auto saves = instance->worldDir();
+    const auto backupDir = WorldBackups::backupDir(saves);
+    const auto backUps = makeShared<SequentialTask>(tr("Backing up the worlds"));
+    QStringList problems;
+    int queued = 0;
+    // the folders the Worlds page lists: the ones with a level.dat
+    for (const auto& folder : QDir(saves).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+        if (!QFileInfo::exists(QDir(folder.absoluteFilePath()).filePath("level.dat"))) {
+            continue;
+        }
+        if (auto task = WorldBackups::createTask(folder, backupDir)) {
+            backUps->addTask(Task::Ptr(task.release()));
+            queued++;
+        } else {
+            problems << tr("%1: its files or %2 can't be read").arg(folder.fileName(), backupDir);
+        }
+    }
+
+    if (queued > 0) {
+        ProgressDialog dialog(this);
+        dialog.setSkipButton(true, tr("Abort"));
+        dialog.execWithTask(backUps.get());
+        if (backUps->getState() == Task::State::AbortedByUser) {
+            return false;
+        }
+        if (!backUps->wasSuccessful()) {
+            problems << backUps->failReason();
+        }
+    }
+    if (problems.isEmpty()) {
+        if (queued > 0) {
+            m_worldsBackedUpTo = backupDir;
+        }
+        return true;
+    }
+
+    // a mod the update takes out takes its blocks and items out of the worlds, so this is the player's call
+    auto* question = CustomMessageBox::selectable(
+        this, tr("Couldn't back up the worlds"),
+        tr("The worlds couldn't all be backed up before the update:\n%1\n\nUpdate the pack anyway?").arg(problems.join('\n')),
+        QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    const bool updateAnyway = question->exec() == QMessageBox::Yes;
+    question->deleteLater();
+    return updateAnyway;
+}
+
 void ManagedPackPage::updatePack(const QUrl& url, bool trusted, const QString& versionID, const QString& versionName)
 {
+    if (!backUpWorlds()) {
+        return;
+    }
+
     QMap<QString, QString> extraInfo;
     // NOTE: Don't use 'm_pack.id' here, since we didn't completely parse all the metadata for the pack, including this field.
     extraInfo.insert("pack_id", m_inst->getManagedPackID());

@@ -790,6 +790,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("ShowGameTimeWithoutDays", false);
 
         // World backups
+        m_settings->registerSetting("BackUpWorldsBeforeUpdate", true);
         m_settings->registerSetting("BackUpWorldsBeforeLaunch", false);
         m_settings->registerSetting("WorldBackupsToKeep", 5);
 

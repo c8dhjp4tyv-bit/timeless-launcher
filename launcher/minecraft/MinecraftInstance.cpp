@@ -238,6 +238,7 @@ void MinecraftInstance::loadSpecificSettings()
 
         // World backups
         auto worldBackupsOverride = m_settings->registerSetting("OverrideWorldBackups", false);
+        m_settings->registerOverride(global_settings->getSetting("BackUpWorldsBeforeUpdate"), worldBackupsOverride);
         m_settings->registerOverride(global_settings->getSetting("BackUpWorldsBeforeLaunch"), worldBackupsOverride);
         m_settings->registerOverride(global_settings->getSetting("WorldBackupsToKeep"), worldBackupsOverride);
 

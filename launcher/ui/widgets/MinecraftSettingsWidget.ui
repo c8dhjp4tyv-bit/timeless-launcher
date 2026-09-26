@@ -376,6 +376,16 @@ It is most likely you will need to change the path - please refer to the mod's w
              </property>
              <layout class="QVBoxLayout" name="worldBackupsLayout">
               <item>
+               <widget class="QCheckBox" name="backUpWorldsBeforeUpdate">
+                <property name="toolTip">
+                 <string>A modpack update can take out mods whose blocks and items are in the worlds. These backups go to backups in the game folder and are never deleted.</string>
+                </property>
+                <property name="text">
+                 <string>Back up all worlds before &amp;updating the modpack</string>
+                </property>
+               </widget>
+              </item>
+              <item>
                <widget class="QCheckBox" name="backUpWorldsBeforeLaunch">
                 <property name="text">
                  <string>&amp;Automatically back up the worlds played since their last backup before launching</string>

@@ -191,6 +191,7 @@ void MinecraftSettingsWidget::loadSettings()
 
     // World backups
     m_ui->worldBackupsGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideWorldBackups").toBool());
+    m_ui->backUpWorldsBeforeUpdate->setChecked(settings->get("BackUpWorldsBeforeUpdate").toBool());
     m_ui->backUpWorldsBeforeLaunch->setChecked(settings->get("BackUpWorldsBeforeLaunch").toBool());
     m_ui->worldBackupsToKeep->setValue(settings->get("WorldBackupsToKeep").toInt());
     m_ui->worldBackupsToKeep->setEnabled(m_ui->backUpWorldsBeforeLaunch->isChecked());
@@ -391,9 +392,11 @@ void MinecraftSettingsWidget::saveSettings()
     }
 
     if (worldBackups) {
+        settings->set("BackUpWorldsBeforeUpdate", m_ui->backUpWorldsBeforeUpdate->isChecked());
         settings->set("BackUpWorldsBeforeLaunch", m_ui->backUpWorldsBeforeLaunch->isChecked());
         settings->set("WorldBackupsToKeep", m_ui->worldBackupsToKeep->value());
     } else {
+        settings->reset("BackUpWorldsBeforeUpdate");
         settings->reset("BackUpWorldsBeforeLaunch");
         settings->reset("WorldBackupsToKeep");
     }

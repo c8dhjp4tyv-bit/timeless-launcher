@@ -37,7 +37,7 @@ auto ExportToZipTask::exportZip() -> ZipResult
         return ZipResult(tr("Folder doesn't exist"));
     }
     if (!m_output.open()) {
-        return ZipResult(tr("Could not create file"));
+        return ZipResult(tr("Could not create %1").arg(m_outputPath));
     }
 
     for (auto fileName : m_extraFiles.keys()) {
