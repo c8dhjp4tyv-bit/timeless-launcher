@@ -38,6 +38,7 @@
 #include "WorldListPage.h"
 #include "AssertHelpers.h"
 #include "Commandline.h"
+#include "archive/ExportToZipTask.h"
 #include "minecraft/WorldList.h"
 #include "settings/SettingsObject.h"
 #include "ui/dialogs/CustomMessageBox.h"
@@ -400,6 +401,7 @@ void WorldListPage::worldChanged([[maybe_unused]] const QModelIndex& current, [[
     m_ui->actionCopy_Seed->setEnabled(enable);
     m_ui->actionRemove->setEnabled(enable);
     m_ui->actionCopy->setEnabled(enable);
+    m_ui->actionBackup->setEnabled(enable);
     m_ui->actionRename->setEnabled(enable);
     m_ui->actionData_Packs->setEnabled(enable);
     m_ui->actionWorldTools->setEnabled(enable);
@@ -483,6 +485,53 @@ void WorldListPage::on_actionCopy_triggered()
     dialog.execWithTask(std::move(task));
 
     m_worlds->startWatching();
+}
+
+void WorldListPage::on_actionBackup_triggered()
+{
+    const QModelIndex index = getSelectedWorld();
+    if (!index.isValid()) {
+        return;
+    }
+
+    if (!isWorldSafe(index)) {
+        auto result = QMessageBox::question(this, tr("Back Up World"),
+                                            tr("Minecraft is running. If the world is open, the backup may catch it in the middle of "
+                                               "saving and hold a damaged copy.\nBack it up anyway?"));
+        if (result != QMessageBox::Yes) {
+            return;
+        }
+    }
+
+    auto task = m_worlds->createBackupWorldTask(index.row());
+    if (!task) {
+        CustomMessageBox::selectable(this, tr("Back Up World"),
+                                     tr("Couldn't start the backup: the world or the backups folder can't be read."), QMessageBox::Warning)
+            ->exec();
+        return;
+    }
+    const auto zipPath = task->outputPath();
+
+    ProgressDialog dialog(this);
+    if (dialog.execWithTask(std::move(task)) != QDialog::Accepted) {
+        // an abort needs no explanation
+        if (dialog.getTask()->getState() == Task::State::Failed) {
+            CustomMessageBox::selectable(this, tr("Back Up World"), tr("The backup failed: %1").arg(dialog.getTask()->failReason()),
+                                         QMessageBox::Warning)
+                ->exec();
+        }
+        return;
+    }
+
+    QMessageBox done(
+        QMessageBox::Information, tr("Back Up World"),
+        tr("The world was backed up to:\n%1\n\nTo restore it, add that file on this page.").arg(QDir::toNativeSeparators(zipPath)),
+        QMessageBox::Ok, this);
+    auto* openFolder = done.addButton(tr("Open Backups Folder"), QMessageBox::ActionRole);
+    done.exec();
+    if (done.clickedButton() == openFolder) {
+        DesktopServices::openPath(QFileInfo(zipPath).absolutePath(), true);
+    }
 }
 
 void WorldListPage::on_actionRename_triggered()

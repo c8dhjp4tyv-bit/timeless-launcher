@@ -26,6 +26,9 @@
 
 class QFileSystemWatcher;
 class Task;
+namespace MMCZip {
+class ExportToZipTask;
+}
 
 class WorldList : public QAbstractListModel {
     Q_OBJECT
@@ -60,6 +63,10 @@ class WorldList : public QAbstractListModel {
 
     /// Create a task to delete the world at the given index.
     std::unique_ptr<Task> createDeleteWorldTask(int index);
+
+    /// Create a task that backs up the world at the given index the way the game's own Make Backup does: into the backups
+    /// folder next to the saves, as a zip named after the date, the time and the world's folder. Adding it restores a copy.
+    std::unique_ptr<MMCZip::ExportToZipTask> createBackupWorldTask(int index);
 
     /// Remove an already deleted world from the model.
     bool removeWorldFromModel(const QFileInfo& sourceFile);

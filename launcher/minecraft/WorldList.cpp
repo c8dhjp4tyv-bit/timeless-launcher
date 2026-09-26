@@ -37,6 +37,9 @@
 #include "WorldTasks.h"
 
 #include <FileSystem.h>
+#include <MMCZip.h>
+#include <archive/ExportToZipTask.h>
+#include <QDateTime>
 #include <QDebug>
 #include <QDirIterator>
 #include <QFileSystemWatcher>
@@ -404,6 +407,32 @@ std::unique_ptr<Task> WorldList::createDeleteWorldTask(int index)
         .sourceFile = world.container(),
         .displayName = world.name(),
     });
+}
+
+std::unique_ptr<MMCZip::ExportToZipTask> WorldList::createBackupWorldTask(int index)
+{
+    if (index >= m_worlds.size() || index < 0) {
+        return nullptr;
+    }
+
+    const auto folder = m_worlds.at(index).container();
+    const auto backups = QDir::cleanPath(FS::PathCombine(m_dir.absolutePath(), "..", "backups"));
+    QFileInfoList files;
+    if (!FS::ensureFolderPathExists(backups) || !MMCZip::collectFileListRecursively(folder.absoluteFilePath(), nullptr, &files, nullptr)) {
+        return nullptr;
+    }
+
+    // the name the game gives its own backups, and the way it keeps a second one in the same second from replacing the first
+    const auto name = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss") + '_' + folder.fileName();
+    auto zipPath = FS::PathCombine(backups, name + ".zip");
+    for (int copy = 1; QFileInfo::exists(zipPath); copy++) {
+        zipPath = FS::PathCombine(backups, QString("%1 (%2).zip").arg(name).arg(copy));
+    }
+
+    auto task = std::make_unique<MMCZip::ExportToZipTask>(zipPath, folder.absoluteFilePath(), files, folder.fileName() + '/');
+    // the game holds this lock while the world is open, and leaves it out of its backups too
+    task->setExcludeFiles({ "session.lock" });
+    return task;
 }
 
 bool WorldList::dropMimeData(const QMimeData* data,

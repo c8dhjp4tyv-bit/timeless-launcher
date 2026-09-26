@@ -45,6 +45,7 @@ class ExportToZipTask : public Task {
 
     virtual ~ExportToZipTask() = default;
 
+    QString outputPath() const { return m_outputPath; }
     void setExcludeFiles(QStringList excludeFiles) { m_excludeFiles = excludeFiles; }
     void addExtraFile(QString fileName, QByteArray data) { m_extraFiles.insert(fileName, data); }
 

@@ -15,8 +15,12 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <QEventLoop>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThreadPool>
+#include <QTimer>
 
 #include <sstream>
 
@@ -25,8 +29,11 @@
 
 #include <FileSystem.h>
 #include <GZip.h>
+#include <archive/ArchiveReader.h>
 #include <archive/ArchiveWriter.h>
+#include <archive/ExportToZipTask.h>
 #include <minecraft/World.h>
+#include <minecraft/WorldList.h>
 
 class WorldTest : public QObject {
     Q_OBJECT
@@ -53,6 +60,19 @@ class WorldTest : public QObject {
         World world{ QFileInfo(worldFolder) };
         world.loadMetadata();
         return world.name();
+    }
+
+    /// Runs the task to its end, and tells whether it succeeded
+    static bool run(Task& task)
+    {
+        QEventLoop loop;
+        connect(&task, &Task::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(10000, &loop, &QEventLoop::quit);
+        task.start();
+        if (!task.isFinished()) {
+            loop.exec();
+        }
+        return task.wasSuccessful();
     }
 
    private slots:
@@ -116,6 +136,53 @@ class WorldTest : public QObject {
         QCOMPARE(nameOf(FS::PathCombine(saves, "Backup")), "Backup");
         // the original is left as it was
         QCOMPARE(nameOf(original), "My World");
+    }
+
+    void backup()
+    {
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const auto saves = temp.filePath("saves");
+        const auto folder = FS::PathCombine(saves, "MyWorld");
+        FS::write(FS::PathCombine(folder, "level.dat"), levelDat("My World"));
+        FS::write(FS::PathCombine(folder, "region", "r.0.0.mca"), "region");
+        // held by the game while the world is open
+        FS::write(FS::PathCombine(folder, "session.lock"), "lock");
+
+        WorldList worlds(saves, nullptr);
+        QVERIFY(worlds.update());
+        QCOMPARE(worlds.size(), 1);
+
+        auto task = worlds.createBackupWorldTask(0);
+        QVERIFY(task);
+        // where the game puts its own backups, and named the same way
+        const QFileInfo zip(task->outputPath());
+        QCOMPARE(zip.absolutePath(), QDir(temp.filePath("backups")).absolutePath());
+        static const QRegularExpression s_backupName(R"(^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_MyWorld\.zip$)");
+        QVERIFY2(s_backupName.match(zip.fileName()).hasMatch(), qPrintable(zip.fileName()));
+
+        QVERIFY(run(*task));
+        MMCZip::ArchiveReader reader(zip.absoluteFilePath());
+        QVERIFY(reader.collectFiles());
+        auto entries = reader.getFiles();
+        entries.sort();
+        QCOMPARE(entries, (QStringList{ "MyWorld/level.dat", "MyWorld/region/r.0.0.mca" }));
+
+        // adding it restores a copy next to the world
+        World backup{ zip };
+        QVERIFY(backup.isValid());
+        QVERIFY(backup.install(saves));
+        QCOMPARE(nameOf(FS::PathCombine(saves, "My World")), "My World");
+        QCOMPARE(FS::read(FS::PathCombine(saves, "My World", "region", "r.0.0.mca")), QByteArray("region"));
+
+        // another one right after doesn't replace it, even within the same second
+        auto again = worlds.createBackupWorldTask(0);
+        QVERIFY(again);
+        QVERIFY(!QFileInfo::exists(again->outputPath()));
+
+        // the list reads the worlds' details on other threads, which have to be done before it goes away
+        QThreadPool::globalInstance()->waitForDone();
     }
 };
 
