@@ -30,7 +30,10 @@ class ExtractZipTask : public Task {
     Q_OBJECT
    public:
     ExtractZipTask(QString input, QDir outputDir, QString subdirectory = "")
-        : m_input(input), m_outputDir(outputDir), m_subdirectory(subdirectory)
+        // the subdirectory is a folder, so "pack" must not take in "pack 2/" along with it
+        : m_input(input)
+        , m_outputDir(outputDir)
+        , m_subdirectory(subdirectory.isEmpty() || subdirectory.endsWith('/') ? subdirectory : subdirectory + '/')
     {}
     virtual ~ExtractZipTask() = default;
 

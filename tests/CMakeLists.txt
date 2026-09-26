@@ -102,3 +102,6 @@ ecm_add_test(CrashHints_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MA
 
 ecm_add_test(LoggedProcess_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME LoggedProcess)
+
+ecm_add_test(ExtractZip_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ExtractZip)
