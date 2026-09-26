@@ -97,6 +97,7 @@ class WorldListPage : public QMainWindow, public BasePage {
     void on_actionRemove_triggered();
     void on_actionAdd_triggered();
     void on_actionCopy_triggered();
+    void on_actionCopyToInstance_triggered();
     void on_actionBackup_triggered();
     void on_actionRename_triggered();
     void on_actionRefresh_triggered();

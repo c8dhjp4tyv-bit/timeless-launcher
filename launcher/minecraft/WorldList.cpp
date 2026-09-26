@@ -378,18 +378,21 @@ std::unique_ptr<Task> WorldList::createInstallWorldTask(const QFileInfo& filenam
     });
 }
 
-std::unique_ptr<Task> WorldList::createCopyWorldTask(int index, const QString& name)
+std::unique_ptr<Task> WorldList::createCopyWorldTask(int index, const QString& name, WorldList* target)
 {
     if (index >= m_worlds.size() || index < 0) {
         return nullptr;
     }
 
     const auto& world = m_worlds.at(index);
+    if (target == nullptr) {
+        target = this;
+    }
 
     return std::make_unique<CopyWorldTask>(CopyWorldTask::Args{
-        .worlds = this,
+        .worlds = target,
         .sourceFile = world.container(),
-        .targetDir = m_dir.absolutePath(),
+        .targetDir = target->dir().absolutePath(),
         .targetName = name,
     });
 }

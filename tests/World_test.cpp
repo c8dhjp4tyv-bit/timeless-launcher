@@ -201,6 +201,43 @@ class WorldTest : public QObject {
         QThreadPool::globalInstance()->waitForDone();
     }
 
+    void copyToAnotherInstance()
+    {
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const auto ours = temp.filePath("ours/saves");
+        const auto theirs = temp.filePath("theirs/saves");
+        FS::write(FS::PathCombine(ours, "MyWorld", "level.dat"), levelDat("My World"));
+        FS::write(FS::PathCombine(ours, "MyWorld", "region", "r.0.0.mca"), "region");
+        // the other instance already has a world in a folder with that name
+        FS::write(FS::PathCombine(theirs, "My World", "level.dat"), levelDat("Their World"));
+
+        WorldList source(ours, nullptr);
+        WorldList target(theirs, nullptr);
+        QVERIFY(source.update());
+        QVERIFY(target.update());
+
+        auto task = source.createCopyWorldTask(0, "My World", &target);
+        QVERIFY(task);
+        QVERIFY(run(*task));
+
+        // the copy is in a folder of its own among the other instance's saves, which the list already shows
+        QCOMPARE(target.size(), 2);
+        auto folders = QDir(theirs).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        folders.removeOne("My World");
+        QCOMPARE(folders.size(), 1);
+        QCOMPARE(nameOf(FS::PathCombine(theirs, folders.first())), "My World");
+        QCOMPARE(FS::read(FS::PathCombine(theirs, folders.first(), "region", "r.0.0.mca")), QByteArray("region"));
+
+        // and nothing else changed
+        QCOMPARE(nameOf(FS::PathCombine(theirs, "My World")), "Their World");
+        QCOMPARE(source.size(), 1);
+        QCOMPARE(nameOf(FS::PathCombine(ours, "MyWorld")), "My World");
+
+        QThreadPool::globalInstance()->waitForDone();
+    }
+
     void backupWhenChanged()
     {
         const QTemporaryDir temp;

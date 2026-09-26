@@ -60,7 +60,9 @@
 #include <QSortFilterProxyModel>
 #include <QTreeView>
 #include <Qt>
+#include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "FileSystem.h"
 
@@ -70,6 +72,7 @@
 
 #include "Application.h"
 #include "DataPackPage.h"
+#include "InstanceList.h"
 
 namespace {
 class WorldListProxyModel : public QSortFilterProxyModel {
@@ -415,6 +418,7 @@ void WorldListPage::worldChanged([[maybe_unused]] const QModelIndex& current, [[
     m_ui->actionCopy_Seed->setEnabled(enable);
     m_ui->actionRemove->setEnabled(enable);
     m_ui->actionCopy->setEnabled(enable);
+    m_ui->actionCopyToInstance->setEnabled(enable);
     m_ui->actionBackup->setEnabled(enable);
     m_ui->actionRestore->setEnabled(enable);
     m_ui->actionRename->setEnabled(enable);
@@ -500,6 +504,69 @@ void WorldListPage::on_actionCopy_triggered()
     dialog.execWithTask(std::move(task));
 
     m_worlds->startWatching();
+}
+
+void WorldListPage::on_actionCopyToInstance_triggered()
+{
+    const QModelIndex index = getSelectedWorld();
+    if (!index.isValid()) {
+        return;
+    }
+
+    if (!worldSafetyNagQuestion(tr("Copy to Instance"))) {
+        return;
+    }
+
+    // the other instances by name, with the folder next to a name that more than one of them has
+    auto* instances = APPLICATION->instances();
+    QList<MinecraftInstance*> targets;
+    QStringList names;
+    for (int i = 0; i < instances->count(); i++) {
+        if (auto* instance = instances->at(i); instance != m_inst) {
+            targets << instance;
+            names << instance->name();
+        }
+    }
+    if (targets.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("Copy to Instance"), tr("There is no other instance to copy the world to."),
+                                     QMessageBox::Information)
+            ->exec();
+        return;
+    }
+    QList<std::pair<QString, MinecraftInstance*>> byChoice;
+    for (int i = 0; i < targets.size(); i++) {
+        const auto choice = names.count(names.at(i)) > 1 ? tr("%1 (%2)").arg(names.at(i), targets.at(i)->id()) : names.at(i);
+        byChoice.append({ choice, targets.at(i) });
+    }
+    std::ranges::sort(byChoice, [](const auto& a, const auto& b) { return QString::localeAwareCompare(a.first, b.first) < 0; });
+    QStringList choices;
+    targets.clear();
+    for (const auto& [choice, instance] : byChoice) {
+        choices << choice;
+        targets << instance;
+    }
+
+    const auto world = m_worlds->allWorlds().at(index.row());
+    const auto worldName = world.name().isEmpty() ? world.folderName() : world.name();
+    bool ok = false;
+    const auto choice = QInputDialog::getItem(this, tr("Copy to Instance"), tr("Copy \"%1\" to:").arg(worldName), choices, 0, false, &ok);
+    if (!ok) {
+        return;
+    }
+    auto* target = targets.at(choices.indexOf(choice));
+
+    auto task = m_worlds->createCopyWorldTask(index.row(), worldName, target->worldList());
+    if (!task) {
+        return;
+    }
+    ProgressDialog dialog(this);
+    if (dialog.execWithTask(std::move(task)) == QDialog::Accepted) {
+        CustomMessageBox::selectable(this, tr("Copy to Instance"), tr("\"%1\" was copied to %2.").arg(worldName, target->name()),
+                                     QMessageBox::Information)
+            ->exec();
+    } else if (dialog.getTask()->getState() == Task::State::Failed) {
+        CustomMessageBox::selectable(this, tr("Copy to Instance"), dialog.getTask()->failReason(), QMessageBox::Warning)->exec();
+    }
 }
 
 void WorldListPage::on_actionBackup_triggered()
