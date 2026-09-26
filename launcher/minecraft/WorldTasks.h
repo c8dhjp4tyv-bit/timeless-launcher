@@ -16,6 +16,8 @@ class InstallWorldTask : public Task {
         QPointer<WorldList> worlds;
         QFileInfo sourceFile;
         QString targetDir;
+        /// what to rename the world to once it is installed, if anything
+        QString targetName;
     };
 
     explicit InstallWorldTask(Args args);

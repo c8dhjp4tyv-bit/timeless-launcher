@@ -55,8 +55,8 @@ class WorldList : public QAbstractListModel {
     /// Install a world from location
     void installWorld(QFileInfo filename);
 
-    /// Create a task to install a world from location
-    std::unique_ptr<Task> createInstallWorldTask(QFileInfo filename);
+    /// Create a task to install a world from location, and to give it another name if one is given
+    std::unique_ptr<Task> createInstallWorldTask(const QFileInfo& filename, const QString& name = {});
 
     /// Create a task to copy the world at the given index.
     std::unique_ptr<Task> createCopyWorldTask(int index, const QString& name);

@@ -17,8 +17,10 @@
 
 #pragma once
 
+#include <QDateTime>
 #include <QFileInfo>
 #include <QFileInfoList>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -52,5 +54,18 @@ bool changedSinceBackup(const QFileInfo& world, const QString& backupDir);
 /// Deletes all but the newest `keep` backups of the world with that folder name in backupDir, and returns the names of the ones
 /// it deleted
 QStringList removeOldBackups(const QString& backupDir, const QString& worldFolderName, int keep);
+
+/// A backup of a world that can be restored
+struct Backup {
+    QFileInfo file;
+    /// when it was made, going by its name
+    QDateTime made;
+    /// whether it was made before a launch, rather than by hand or by the game
+    bool automatic = false;
+};
+
+/// The backups of the world with that folder name in savesDir, both the ones in the backups folder and the automatic ones, newest
+/// first
+QList<Backup> allBackupsOf(const QString& savesDir, const QString& worldFolderName);
 
 }  // namespace WorldBackups

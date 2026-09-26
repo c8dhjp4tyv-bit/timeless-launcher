@@ -23,6 +23,8 @@
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <functional>
+#include <utility>
 
 #include "FileSystem.h"
 #include "MMCZip.h"
@@ -98,6 +100,19 @@ QStringList removeOldBackups(const QString& backupDir, const QString& worldFolde
         }
     }
     return removed;
+}
+
+QList<Backup> allBackupsOf(const QString& savesDir, const QString& worldFolderName)
+{
+    QList<Backup> backups;
+    for (const auto& [dir, automatic] : { std::pair{ backupDir(savesDir), false }, std::pair{ automaticBackupDir(savesDir), true } }) {
+        for (const auto& file : backupsOf(dir, worldFolderName)) {
+            // the name starts with the local date and time it was made at
+            backups.append({ file, QDateTime::fromString(file.fileName().left(19), "yyyy-MM-dd_HH-mm-ss"), automatic });
+        }
+    }
+    std::ranges::stable_sort(backups, std::greater{}, &Backup::made);
+    return backups;
 }
 
 }  // namespace WorldBackups

@@ -88,6 +88,7 @@
    <addaction name="actionRename"/>
    <addaction name="actionCopy"/>
    <addaction name="actionBackup"/>
+   <addaction name="actionRestore"/>
    <addaction name="actionRemove"/>
    <addaction name="actionData_Packs"/>
    <addaction name="actionWorldTools"/>
@@ -123,6 +124,14 @@
    </property>
    <property name="toolTip">
     <string>Save a copy of the world in the backups folder, as the game's own Make Backup does. Add the backup to restore it.</string>
+   </property>
+  </action>
+  <action name="actionRestore">
+   <property name="text">
+    <string>Restore</string>
+   </property>
+   <property name="toolTip">
+    <string>Restore a backup of the world as a copy next to it.</string>
    </property>
   </action>
   <action name="actionRemove">

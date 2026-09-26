@@ -186,6 +186,12 @@ class WorldTest : public QObject {
         QCOMPARE(nameOf(FS::PathCombine(saves, "My World")), "My World");
         QCOMPARE(FS::read(FS::PathCombine(saves, "My World", "region", "r.0.0.mca")), QByteArray("region"));
 
+        // or under another name, as restoring it from the Worlds page does
+        const auto restored = temp.filePath("restored");
+        QVERIFY(World{ zip }.install(restored, "My World (backup)"));
+        QCOMPARE(nameOf(FS::PathCombine(restored, "My World (backup)")), "My World (backup)");
+        QCOMPARE(nameOf(folder), "My World");
+
         // another one right after doesn't replace it, even within the same second
         auto again = worlds.createBackupWorldTask(0);
         QVERIFY(again);
@@ -253,6 +259,33 @@ class WorldTest : public QObject {
         // the newest one always stays
         QCOMPARE(WorldBackups::removeOldBackups(temp.path(), "New World", 0).size(), 4);
         QCOMPARE(fileNames(WorldBackups::backupsOf(temp.path(), "New World")), QStringList{ backups.last() });
+    }
+
+    void listBackups()
+    {
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const auto saves = temp.filePath("saves");
+        const auto manual = WorldBackups::backupDir(saves);
+        const auto automatic = WorldBackups::automaticBackupDir(saves);
+        FS::write(FS::PathCombine(manual, "2026-03-01_12-00-00_MyWorld.zip"), "zip");
+        FS::write(FS::PathCombine(automatic, "2026-02-01_12-00-00_MyWorld.zip"), "zip");
+        FS::write(FS::PathCombine(automatic, "2026-04-01_08-30-00_MyWorld.zip"), "zip");
+        FS::write(FS::PathCombine(manual, "2026-05-01_12-00-00_Other.zip"), "zip");
+
+        // newest first, whichever folder they are in
+        const auto backups = WorldBackups::allBackupsOf(saves, "MyWorld");
+        QCOMPARE(backups.size(), 3);
+        QCOMPARE(backups.at(0).file.fileName(), "2026-04-01_08-30-00_MyWorld.zip");
+        QCOMPARE(backups.at(0).made, QDateTime(QDate(2026, 4, 1), QTime(8, 30)));
+        QVERIFY(backups.at(0).automatic);
+        QCOMPARE(backups.at(1).file.fileName(), "2026-03-01_12-00-00_MyWorld.zip");
+        QVERIFY(!backups.at(1).automatic);
+        QCOMPARE(backups.at(2).file.fileName(), "2026-02-01_12-00-00_MyWorld.zip");
+        QVERIFY(backups.at(2).automatic);
+
+        QVERIFY(WorldBackups::allBackupsOf(saves, "Nothing").isEmpty());
     }
 };
 

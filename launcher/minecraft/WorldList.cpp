@@ -368,12 +368,13 @@ void WorldList::installWorld(QFileInfo filename)
     w.install(m_dir.absolutePath());
 }
 
-std::unique_ptr<Task> WorldList::createInstallWorldTask(QFileInfo filename)
+std::unique_ptr<Task> WorldList::createInstallWorldTask(const QFileInfo& filename, const QString& name)
 {
     return std::make_unique<InstallWorldTask>(InstallWorldTask::Args{
         .worlds = this,
         .sourceFile = filename,
         .targetDir = m_dir.absolutePath(),
+        .targetName = name,
     });
 }
 

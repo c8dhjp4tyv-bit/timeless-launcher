@@ -52,6 +52,7 @@
 #include <QEvent>
 #include <QInputDialog>
 #include <QKeyEvent>
+#include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
 #include <QProcess>
@@ -97,7 +98,12 @@ class WorldListProxyModel : public QSortFilterProxyModel {
 }  // namespace
 
 WorldListPage::WorldListPage(MinecraftInstance* inst, WorldList* worlds, QWidget* parent)
-    : QMainWindow(parent), m_inst(inst), m_ui(new Ui::WorldListPage), m_worlds(worlds), m_worldToolsMenu(new QMenu(this))
+    : QMainWindow(parent)
+    , m_inst(inst)
+    , m_ui(new Ui::WorldListPage)
+    , m_worlds(worlds)
+    , m_worldToolsMenu(new QMenu(this))
+    , m_restoreMenu(new QMenu(this))
 {
     m_ui->setupUi(this);
 
@@ -133,6 +139,14 @@ WorldListPage::WorldListPage(MinecraftInstance* inst, WorldList* worlds, QWidget
         }
     });
     connect(APPLICATION->settings()->getSetting("WorldTools").get(), &Setting::SettingChanged, this, [this] { populateWorldToolsMenu(); });
+
+    m_ui->actionRestore->setMenu(m_restoreMenu);
+    connect(m_restoreMenu, &QMenu::aboutToShow, this, &WorldListPage::populateRestoreMenu);
+    connect(m_ui->actionRestore, &QAction::triggered, this, [this] {
+        if (getSelectedWorld().isValid()) {
+            m_restoreMenu->popup(QCursor::pos());
+        }
+    });
 
     worldChanged(QModelIndex(), QModelIndex());
 }
@@ -402,6 +416,7 @@ void WorldListPage::worldChanged([[maybe_unused]] const QModelIndex& current, [[
     m_ui->actionRemove->setEnabled(enable);
     m_ui->actionCopy->setEnabled(enable);
     m_ui->actionBackup->setEnabled(enable);
+    m_ui->actionRestore->setEnabled(enable);
     m_ui->actionRename->setEnabled(enable);
     m_ui->actionData_Packs->setEnabled(enable);
     m_ui->actionWorldTools->setEnabled(enable);
@@ -532,6 +547,46 @@ void WorldListPage::on_actionBackup_triggered()
     if (done.clickedButton() == openFolder) {
         DesktopServices::openPath(QFileInfo(zipPath).absolutePath(), true);
     }
+}
+
+void WorldListPage::populateRestoreMenu()
+{
+    m_restoreMenu->clear();
+    const QModelIndex index = getSelectedWorld();
+    if (!index.isValid()) {
+        return;
+    }
+
+    const auto world = m_worlds->allWorlds().at(index.row());
+    const auto backups = WorldBackups::allBackupsOf(m_worlds->dir().absolutePath(), world.folderName());
+    if (backups.isEmpty()) {
+        m_restoreMenu->addAction(tr("No Backups of This World"))->setEnabled(false);
+        return;
+    }
+    const auto worldName = world.name().isEmpty() ? world.folderName() : world.name();
+    for (const auto& backup : backups) {
+        const auto made = QLocale().toString(backup.made, QLocale::ShortFormat);
+        auto* action = m_restoreMenu->addAction(backup.automatic ? tr("%1 (automatic)").arg(made) : made);
+        action->setToolTip(QDir::toNativeSeparators(backup.file.absoluteFilePath()));
+        connect(action, &QAction::triggered, this, [this, backup, worldName] { restoreBackup(backup, worldName); });
+    }
+}
+
+void WorldListPage::restoreBackup(const WorldBackups::Backup& backup, const QString& worldName)
+{
+    // A copy with its own name, so that it can't be mistaken for the world in the game's list either. The date is written the
+    // same way everywhere, as it ends up in the folder's name.
+    const auto name = tr("%1 (backup from %2)").arg(worldName, backup.made.toString("yyyy-MM-dd HH:mm"));
+    auto task = m_worlds->createInstallWorldTask(backup.file, name);
+
+    m_worlds->stopWatching();
+    ProgressDialog dialog(this);
+    if (dialog.execWithTask(std::move(task)) != QDialog::Accepted && dialog.getTask()->getState() == Task::State::Failed) {
+        CustomMessageBox::selectable(this, tr("Restore Backup"), tr("Couldn't restore the backup: %1").arg(dialog.getTask()->failReason()),
+                                     QMessageBox::Warning)
+            ->exec();
+    }
+    m_worlds->startWatching();
 }
 
 void WorldListPage::on_actionRename_triggered()

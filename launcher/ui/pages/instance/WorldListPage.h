@@ -40,6 +40,7 @@
 #include "minecraft/MinecraftInstance.h"
 #include "ui/pages/BasePage.h"
 
+#include "minecraft/WorldBackups.h"
 #include "settings/Setting.h"
 
 class QMenu;
@@ -79,11 +80,14 @@ class WorldListPage : public QMainWindow, public BasePage {
     bool worldSafetyNagQuestion(const QString& actionType);
     void populateWorldToolsMenu();
     void launchWorldTool(const QString& name, const QString& command);
+    void populateRestoreMenu();
+    void restoreBackup(const WorldBackups::Backup& backup, const QString& worldName);
 
    private:
     Ui::WorldListPage* m_ui;
     WorldList* m_worlds;
     QMenu* m_worldToolsMenu = nullptr;
+    QMenu* m_restoreMenu = nullptr;
 
     std::shared_ptr<Setting> m_wideBarSetting = nullptr;
     std::unique_ptr<DataPackFolderModel> m_datapackModel;
