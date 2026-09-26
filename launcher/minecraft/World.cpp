@@ -301,6 +301,13 @@ void World::readFromZip(const QFileInfo& file)
 
 bool World::install(const QString& to, const QString& name)
 {
+    // The world's name, which its folder is named after, and where in a zip its level.dat sits both come from the
+    // metadata, which a freshly constructed World hasn't read yet.
+    loadMetadata();
+    if (!m_isValid) {
+        return false;
+    }
+
     auto finalPath = FS::PathCombine(to, FS::DirNameFromString(m_actualName, to));
     if (!FS::ensureFolderPathExists(finalPath)) {
         return false;
@@ -308,7 +315,8 @@ bool World::install(const QString& to, const QString& name)
     bool ok = false;
     if (m_containerFile.isFile()) {
         MMCZip::ArchiveReader zip(m_containerFile.absoluteFilePath());
-        ok = !MMCZip::extractSubDir(&zip, m_containerOffsetPath, finalPath);
+        // nullopt means the extraction failed, a list (even an empty one) that it worked
+        ok = MMCZip::extractSubDir(&zip, m_containerOffsetPath, finalPath).has_value();
     } else if (m_containerFile.isDir()) {
         QString from = m_containerFile.filePath();
         ok = FS::copy(from, finalPath)();
