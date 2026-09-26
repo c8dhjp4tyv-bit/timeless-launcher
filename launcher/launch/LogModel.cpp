@@ -170,7 +170,7 @@ bool LogModel::isOverFlow()
 MessageLevel LogModel::previousLevel()
 {
     if (m_numLines > 0) {
-        return m_content[m_numLines - 1].level;
+        return m_content[(m_firstLine + m_numLines - 1) % m_maxLines].level;
     }
     return MessageLevel::Unknown;
 }
