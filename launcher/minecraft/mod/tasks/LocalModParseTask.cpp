@@ -576,6 +576,9 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
 
             if (filePath == "META-INF/mods.toml" || filePath == "META-INF/neoforge.mods.toml") {
                 details = ReadMCModTOML(file->readAll());
+                // NeoForge kept reading Forge's file until it got one of its own
+                details.loaders = filePath == "META-INF/neoforge.mods.toml" ? ModPlatform::ModLoaderTypes(ModPlatform::NeoForge)
+                                                                            : ModPlatform::Forge | ModPlatform::NeoForge;
                 isValid = true;
                 if (details.version == "${file.jarVersion}" && !manifestVersion.isEmpty()) {
                     details.version = manifestVersion;
@@ -608,24 +611,29 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
             }
             if (filePath == "mcmod.info") {
                 details = ReadMCModInfo(file->readAll());
+                details.loaders = ModPlatform::Forge;
                 isValid = true;
                 stop = true;
                 return true;
             }
             if (filePath == "quilt.mod.json") {
                 details = ReadQuiltModInfo(file->readAll());
+                details.loaders = ModPlatform::Quilt;
                 isValid = true;
                 stop = true;
                 return true;
             }
             if (filePath == "fabric.mod.json") {
                 details = ReadFabricModInfo(file->readAll());
+                // Quilt loads Fabric mods too
+                details.loaders = ModPlatform::Fabric | ModPlatform::Quilt;
                 isValid = true;
                 stop = true;
                 return true;
             }
             if (filePath == "forgeversion.properties") {
                 details = ReadForgeInfo(file->readAll());
+                details.loaders = ModPlatform::Forge;
                 isValid = true;
                 stop = true;
                 return true;
@@ -669,6 +677,7 @@ bool processLitemod(Mod& mod, [[maybe_unused]] ProcessingLevel level)
 
     if (auto file = zip.goToFile("litemod.json"); file) {
         details = ReadLiteModInfo(file->readAll());
+        details.loaders = ModPlatform::LiteLoader;
 
         mod.setDetails(details);
         return true;

@@ -90,8 +90,13 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
     int row = index.row();
     int column = index.column();
 
+    const auto duplicates = duplicatesOf(at(row).internalId());
+
     switch (role) {
         case Qt::BackgroundRole:
+            if (!duplicates.isEmpty()) {
+                return QBrush(QColor(255, 0, 0, 40));
+            }
             return rowBackground(row);
         case Qt::DisplayRole:
             switch (column) {
@@ -129,6 +134,9 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
             if (column == ImageColumn) {
                 return at(row).icon({ 32, 32 }, Qt::AspectRatioMode::KeepAspectRatioByExpanding);
             }
+            if (column == NameColumn && !duplicates.isEmpty()) {
+                return QIcon::fromTheme("status-bad");
+            }
             break;
         }
         case Qt::SizeHintRole:
@@ -151,6 +159,15 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
                         return list.join(QLatin1Char('\n'));
                     }
                     break;
+                }
+                case NameColumn: {
+                    auto tooltip = ResourceFolderModel::data(index.siblingAtColumn(ResourceFolderModel::NameColumn), role).toString();
+                    if (!duplicates.isEmpty()) {
+                        tooltip += "\n" + tr("Duplicate: %1 has the same mod ID (%2). The game won't start with more than one of them "
+                                             "enabled, so disable or delete all but one.")
+                                              .arg(duplicates.join(", "), at(row).mod_id());
+                    }
+                    return tooltip;
                 }
                 default:
                     break;
@@ -346,6 +363,48 @@ void ModFolderModel::onParseFinished()
             emit dataChanged(index(row), index(row, columnCount(QModelIndex()) - 1));
         }
     }
+
+    updateDuplicates();
+}
+
+void ModFolderModel::onUpdateSucceeded()
+{
+    ResourceFolderModel::onUpdateSucceeded();
+    // a removed or renamed file may have been one of a pair
+    updateDuplicates();
+}
+
+void ModFolderModel::updateDuplicates()
+{
+    QHash<QString, QList<Mod*>> byId;
+    for (auto* mod : allMods()) {
+        // disabled mods aren't loaded, and a mod without an ID was never read
+        if (mod->enabled() && !mod->mod_id().isEmpty()) {
+            byId[mod->mod_id()] << mod;
+        }
+    }
+
+    QHash<QString, QStringList> duplicates;
+    for (const auto& sameId : std::as_const(byId)) {
+        for (auto* mod : sameId) {
+            for (auto* other : sameId) {
+                // e.g. the Fabric and the Forge build of a mod: each loader only reads one of them
+                auto loaders = mod->details().loaders;
+                auto otherLoaders = other->details().loaders;
+                if (other != mod && (!loaders || !otherLoaders || loaders.testAnyFlags(otherLoaders))) {
+                    duplicates[mod->internalId()] << other->fileinfo().fileName();
+                }
+            }
+        }
+    }
+
+    if (duplicates == m_duplicates) {
+        return;
+    }
+    m_duplicates = duplicates;
+    if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount({}) - 1));
+    }
 }
 
 namespace {
@@ -501,6 +560,7 @@ bool ModFolderModel::setResourceEnabled(const QModelIndexList& indexes, EnableAc
 
     auto disableStatus = ResourceFolderModel::setResourceEnabled(toList(toDisable), EnableAction::DISABLE);
     auto enableStatus = ResourceFolderModel::setResourceEnabled(toList(toEnable), EnableAction::ENABLE);
+    updateDuplicates();
     return disableStatus && enableStatus;
 }
 

@@ -100,11 +100,22 @@ class ModFolderModel : public ResourceFolderModel {
     QStringList requiresList(const QString& id) const;
     QStringList requiredByList(const QString& id) const;
 
+    /**
+     * The file names of the other enabled mods that have the same mod ID as the given one and are read by the same
+     * loader. Mod loaders refuse to start with two copies of a mod, so every one of them but one has to go.
+     */
+    QStringList duplicatesOf(const QString& internalId) const { return m_duplicates.value(internalId); }
+
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;
     void onParseFinished();
+    void onUpdateSucceeded() override;
 
    private:
+    void updateDuplicates();
+
     QHash<QString, QSet<Mod*>> m_requiredBy;
     QHash<QString, QSet<Mod*>> m_requires;
+    // internal ID -> file names of its duplicates
+    QHash<QString, QStringList> m_duplicates;
 };
