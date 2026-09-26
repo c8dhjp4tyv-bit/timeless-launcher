@@ -4,10 +4,14 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QTcpSocket>
+#include <chrono>
 #include <utility>
 
 #include "Exception.h"
 #include "Json.h"
+
+// Long enough for a busy server on the other side of the world, short enough not to leave the list waiting on one that's gone
+constexpr auto g_timeout = std::chrono::seconds(15);
 
 McClient::McClient(QObject* parent, QString domain, QString ip, const uint16_t port)
     : QObject(parent), m_domain(std::move(domain)), m_ip(std::move(ip)), m_port(port)
@@ -25,6 +29,14 @@ void McClient::getStatusData()
     });
 
     connect(&m_socket, &QTcpSocket::errorOccurred, this, [this]() { emitFail("Socket disconnected: " + m_socket.errorString()); });
+
+    // Without this, a server that drops the connection attempt or never answers keeps the query going for minutes
+    m_timeout.setSingleShot(true);
+    connect(&m_timeout, &QTimer::timeout, this, [this]() {
+        emitFail("Timed out");
+        m_socket.abort();
+    });
+    m_timeout.start(g_timeout);
 
     m_socket.connectToHost(m_ip, m_port);
 }
@@ -190,6 +202,7 @@ void McClient::emitFail(const QString& error)
         return;
     }
     m_done = true;
+    m_timeout.stop();
 
     qDebug() << "Minecraft server ping for status error:" << error;
     emit failed(error);
@@ -202,6 +215,7 @@ void McClient::emitSucceed(QJsonObject data)
         return;
     }
     m_done = true;
+    m_timeout.stop();
 
     emit succeeded(std::move(data));
     emit finished();

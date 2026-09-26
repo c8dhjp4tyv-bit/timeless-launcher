@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QTcpSocket>
+#include <QTimer>
 
 // Client for the Minecraft protocol
 class McClient : public QObject {
@@ -47,6 +48,7 @@ class McClient : public QObject {
     QString m_ip;
     uint16_t m_port;
     QTcpSocket m_socket;
+    QTimer m_timeout;
     bool m_done = false;
 
     ResponseReadState m_responseReadState = ResponseReadState::Waiting;

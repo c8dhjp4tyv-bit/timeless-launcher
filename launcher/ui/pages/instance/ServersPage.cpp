@@ -106,6 +106,7 @@ struct Server {
 
     // Data - temporary
     std::optional<int> m_currentPlayers;  // nullopt if not calculated/calculating
+    QString m_pingError;                  // why the server couldn't be queried, empty if it could
 
    private:
     /// Like the game, reads a missing entry or one that isn't a string as an empty string rather than failing over it.
@@ -332,12 +333,19 @@ class ServersModel : public QAbstractListModel {
                     case 2:
                         if (m_servers[row].m_currentPlayers) {
                             return *m_servers[row].m_currentPlayers;
+                        } else if (!m_servers[row].m_pingError.isEmpty()) {
+                            return tr("Offline");
                         } else {
                             return "...";
                         }
                     default:
                         return QVariant();
                 }
+            case Qt::ToolTipRole:
+                if (column == 2 && !m_servers[row].m_pingError.isEmpty()) {
+                    return tr("Couldn't reach the server: %1").arg(m_servers[row].m_pingError);
+                }
+                return QVariant();
             case ServerPtrRole:
                 if (column == 0)
                     return QVariant::fromValue<void*>((void*)&m_servers[row]);
@@ -445,6 +453,7 @@ class ServersModel : public QAbstractListModel {
         for (Server& server : m_servers) {
             // reset current players
             server.m_currentPlayers = {};
+            server.m_pingError.clear();
             emit dataChanged(index(row, 0), index(row, COLUMN_COUNT - 1));
 
             // Start task to query server status
@@ -459,7 +468,12 @@ class ServersModel : public QAbstractListModel {
                     return;
                 }
                 const int serverRow = serverIndex.row();
-                m_servers[serverRow].m_currentPlayers = task->m_outputOnlinePlayers;
+                auto& pinged = m_servers[serverRow];
+                if (task->wasSuccessful()) {
+                    pinged.m_currentPlayers = task->m_outputOnlinePlayers;
+                } else {
+                    pinged.m_pingError = task->failReason();
+                }
                 emit dataChanged(index(serverRow, 0), index(serverRow, COLUMN_COUNT - 1));
             });
             row++;
