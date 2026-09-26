@@ -16,6 +16,27 @@
 
 static const QRegularExpression s_newlineRegex("\r\n|\n|\r");
 
+namespace {
+// Fabric and Quilt both key an icon map by the width of each image: {"32": "icon32.png", "128": "icon128.png"}
+QString largestIcon(const QJsonObject& icons)
+{
+    int largest = 0;
+    QString bestIcon;
+    for (auto it = icons.begin(); it != icons.end(); ++it) {
+        auto size = it.key().split('x').first().toInt();
+        if (size > largest) {
+            largest = size;
+            bestIcon = it.value().toString();
+        }
+    }
+    if (bestIcon.isEmpty() && !icons.isEmpty()) {
+        // parsing the sizes failed, take the first
+        bestIcon = icons.begin().value().toString();
+    }
+    return bestIcon;
+}
+}  // namespace
+
 namespace ModUtils {
 
 // NEW format
@@ -336,23 +357,7 @@ ModDetails ReadFabricModInfo(QByteArray contents)
         if (object.contains("icon")) {
             auto icon = object.value("icon");
             if (icon.isObject()) {
-                auto obj = icon.toObject();
-                // take the largest icon
-                int largest = 0;
-                QString bestIcon;
-                for (const auto& key : obj.keys()) {
-                    auto size = key.split('x').first().toInt();
-                    if (size > largest) {
-                        largest = size;
-                        bestIcon = obj.value(key).toString();
-                    }
-                }
-                if (!bestIcon.isEmpty()) {
-                    details.icon_file = bestIcon;
-                } else if (!obj.isEmpty()) {
-                    // take the first
-                    details.icon_file = obj.begin().value().toString();
-                }
+                details.icon_file = largestIcon(icon.toObject());
             } else if (icon.isString()) {
                 details.icon_file = icon.toString();
             }
@@ -433,49 +438,32 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
             if (modMetadata.contains("icon")) {
                 auto icon = modMetadata.value("icon");
                 if (icon.isObject()) {
-                    auto obj = icon.toObject();
-                    // take the largest icon
-                    int largest = 0;
-                    for (auto key : obj.keys()) {
-                        auto size = key.split('x').first().toInt();
-                        if (size > largest) {
-                            largest = size;
-                        }
-                    }
-                    if (largest > 0) {
-                        auto key = QString::number(largest) + "x" + QString::number(largest);
-                        details.icon_file = obj.value(key).toString();
-                    } else {  // parsing the sizes failed
-                        // take the first
-                        if (auto it = obj.begin(); it != obj.end()) {
-                            details.icon_file = it->toString();
-                        }
-                    }
+                    details.icon_file = largestIcon(icon.toObject());
                 } else if (icon.isString()) {
                     details.icon_file = icon.toString();
                 }
             }
-            if (object.contains("depends")) {
-                auto depends = object.value("depends");
-                if (depends.isArray()) {
-                    auto array = depends.toArray();
-                    for (auto obj : array) {
-                        QString modId;
-                        if (obj.isString()) {
-                            modId = obj.toString();
-                        } else if (obj.isObject()) {
-                            auto objValue = obj.toObject();
-                            modId = objValue.value("id").toString();
-                            if (objValue.contains("optional") && objValue.value("optional").toBool()) {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
-                        if (modId != "minecraft" && !modId.startsWith("quilt_")) {
-                            details.dependencies.append(modId);
-                        }
+
+            // depends lives in quilt_loader, next to id and version
+            const auto depends = modInfo.value("depends").toArray();
+            for (const auto& dependency : depends) {
+                QString modId;
+                if (dependency.isString()) {
+                    modId = dependency.toString();
+                } else if (dependency.isObject()) {
+                    auto dependencyObject = dependency.toObject();
+                    if (dependencyObject.value("optional").toBool()) {
+                        continue;
                     }
+                    modId = dependencyObject.value("id").toString();
+                } else {
+                    // an array is satisfied by any one of its entries, so none of them is required on its own
+                    continue;
+                }
+                // the id may be written as mavenGroup:modId, but mods are matched by their bare id
+                modId = modId.section(':', -1);
+                if (!modId.isEmpty() && modId != "minecraft" && !modId.startsWith("quilt_")) {
+                    details.dependencies.append(modId);
                 }
             }
         }
