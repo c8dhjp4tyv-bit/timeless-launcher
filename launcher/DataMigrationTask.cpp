@@ -72,7 +72,21 @@ void DataMigrationTask::copyFinished()
     disconnect(&m_copyFutureWatcher, &QFutureWatcher<bool>::canceled, this, &DataMigrationTask::copyAborted);
 
     if (!m_copyFuture.isValid() || !m_copyFuture.result()) {
-        emitFailed(tr("Some paths could not be copied!"));
+        QString reason = tr("Some paths could not be copied!");
+        const auto failed = m_copy.failed();
+        if (!failed.isEmpty()) {
+            constexpr int maxListed = 10;
+            const QDir target(m_targetPath);
+            QStringList listed;
+            for (const auto& path : failed.mid(0, maxListed)) {
+                listed << target.relativeFilePath(path);
+            }
+            reason += "\n\n" + listed.join('\n');
+            if (failed.size() > maxListed) {
+                reason += "\n" + tr("…and %n more", "", static_cast<int>(failed.size()) - maxListed);
+            }
+        }
+        emitFailed(reason);
         return;
     }
 

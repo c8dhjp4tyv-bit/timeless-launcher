@@ -29,6 +29,8 @@ class InstanceCopyTask : public InstanceTask {
     BaseInstance* m_origInstance;
     QFuture<bool> m_copyFuture;
     QFutureWatcher<bool> m_copyFutureWatcher;
+    // relative to the instance root, filled in by the copy thread before the future finishes
+    QStringList m_failedCopies;
     Filter m_matcher;
     bool m_keepPlaytime;
     bool m_useLinks = false;

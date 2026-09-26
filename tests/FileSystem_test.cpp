@@ -304,6 +304,65 @@ class FileSystemTest : public QObject {
         }
     }
 
+    void test_copy_reports_every_failure_data()
+    {
+        QTest::addColumn<QString>("conflicting");
+
+        // The directory is not listed in any particular order, so each file takes a turn at failing: whichever order
+        // the files come in, some row has the failure before a file that is copied fine.
+        QTest::newRow("a.txt") << "a.txt";
+        QTest::newRow("b.txt") << "b.txt";
+        QTest::newRow("c.txt") << "c.txt";
+    }
+
+    void test_copy_reports_every_failure()
+    {
+        QFETCH(QString, conflicting);
+
+        QTemporaryDir source;
+        QTemporaryDir target;
+        QVERIFY(source.isValid() && target.isValid());
+        for (const auto* name : { "a.txt", "b.txt", "c.txt" }) {
+            FS::write(source.filePath(name), "new");
+        }
+        // without overwrite, a file already at the destination can't be copied
+        FS::write(target.filePath(conflicting), "old");
+
+        FS::copy c(source.path(), target.path());
+
+        QVERIFY(!c());
+        QCOMPARE(c.totalFailed(), qsizetype(1));
+        QCOMPARE(QFileInfo(c.failed().first()).fileName(), conflicting);
+        QCOMPARE(c.totalCopied(), qsizetype(2));
+        QCOMPARE(FS::read(target.filePath(conflicting)), QByteArray("old"));
+        for (const auto* name : { "a.txt", "b.txt", "c.txt" }) {
+            if (name != conflicting) {
+                QCOMPARE(FS::read(target.filePath(name)), QByteArray("new"));
+            }
+        }
+    }
+
+    void test_move_keeps_source_when_copy_fails_data() { test_copy_reports_every_failure_data(); }
+
+    void test_move_keeps_source_when_copy_fails()
+    {
+        QFETCH(QString, conflicting);
+
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto source = temp.filePath("source");
+        const auto target = temp.filePath("target");
+        for (const auto* name : { "a.txt", "b.txt", "c.txt" }) {
+            FS::write(FS::PathCombine(source, name), "new");
+        }
+        // A non-empty target can't be renamed over, so the move falls back to copying and deleting the source.
+        FS::write(FS::PathCombine(target, conflicting), "old");
+
+        QVERIFY(!FS::move(source, target));
+        // the file that could not be copied must still be where it was
+        QCOMPARE(FS::read(FS::PathCombine(source, conflicting)), QByteArray("new"));
+    }
+
     void test_getDesktop() { QCOMPARE(FS::getDesktopDir(), QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)); }
 
     void test_link()

@@ -131,7 +131,13 @@ void InstanceCopyTask::executeTask()
         folderCopy(true);
         setProgress(0, folderCopy.totalCopied());
         connect(&folderCopy, &FS::copy::fileCopied, this, [this]() { setProgress(m_progress + 1, m_progressTotal); });
-        return folderCopy();
+        const bool copied = folderCopy();
+
+        const QDir staging(m_stagingPath);
+        for (const auto& path : folderCopy.failed()) {
+            m_failedCopies << staging.relativeFilePath(path);
+        }
+        return copied;
     });
     connect(&m_copyFutureWatcher, &QFutureWatcher<bool>::finished, this, &InstanceCopyTask::copyFinished);
     connect(&m_copyFutureWatcher, &QFutureWatcher<bool>::canceled, this, &InstanceCopyTask::copyAborted);
@@ -142,7 +148,16 @@ void InstanceCopyTask::copyFinished()
 {
     auto successful = m_copyFuture.result();
     if (!successful) {
-        emitFailed(tr("Instance folder copy failed."));
+        QString reason = tr("Instance folder copy failed.");
+        if (!m_failedCopies.isEmpty()) {
+            // e.g. files the game keeps open while it is running
+            constexpr int maxListed = 10;
+            reason += "\n\n" + tr("These files could not be copied:") + "\n" + m_failedCopies.mid(0, maxListed).join('\n');
+            if (m_failedCopies.size() > maxListed) {
+                reason += "\n" + tr("…and %n more", "", static_cast<int>(m_failedCopies.size()) - maxListed);
+            }
+        }
+        emitFailed(reason);
         return;
     }
 
