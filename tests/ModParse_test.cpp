@@ -17,8 +17,11 @@
 
 #include <QTest>
 
+#include <QFile>
 #include <QStringList>
+#include <QTemporaryDir>
 
+#include <archive/ArchiveWriter.h>
 #include <minecraft/mod/tasks/LocalModParseTask.h>
 
 class ModParseTest : public QObject {
@@ -35,6 +38,33 @@ class ModParseTest : public QObject {
     static QByteArray fabricMod(const QString& fields)
     {
         return QString(R"({"schemaVersion": 1, "id": "example", "version": "1.0.0", %1})").arg(fields).toUtf8();
+    }
+
+    /// A mod's jar as a download brings it, with more after its metadata for a cut to fall into
+    static QByteArray wholeJar()
+    {
+        const QTemporaryDir dir;
+        const auto path = dir.filePath("whole.jar");
+        QByteArray data;
+        for (int i = 0; i < 20000; i++) {
+            data.append(static_cast<char>((i * 7919 + i / 13) % 256));
+        }
+        MMCZip::ArchiveWriter jar(path);
+        if (!jar.open() || !jar.addFile("fabric.mod.json", fabricMod({})) || !jar.addFile("assets/example/data.bin", data) ||
+            !jar.close()) {
+            return {};
+        }
+        QFile file(path);
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    }
+
+    /// The jar with a comment of that many bytes, which zips may have after their end record
+    static QByteArray withComment(QByteArray jar, int length)
+    {
+        // the comment's length is the record's last field, and the record comes last in a jar without a comment
+        jar[jar.size() - 2] = static_cast<char>(length % 256);
+        jar[jar.size() - 1] = static_cast<char>(length / 256);
+        return jar + QByteArray(length, 'x');
     }
 
     static void addIconRows()
@@ -99,6 +129,46 @@ class ModParseTest : public QObject {
         auto details = ModUtils::ReadFabricModInfo(fabricMod(R"("icon": )" + icon));
 
         QCOMPARE(details.icon_file, expected);
+    }
+
+    void missingZipEnd_data()
+    {
+        QTest::addColumn<QByteArray>("contents");
+        QTest::addColumn<bool>("missing");
+
+        const auto whole = wholeJar();
+        QVERIFY(!whole.isEmpty());
+        QTest::newRow("whole jar") << whole << false;
+        QTest::newRow("cut short") << whole.first(whole.size() * 6 / 10) << true;
+        QTest::newRow("cut in its end record") << whole.first(whole.size() - 10) << true;
+        QTest::newRow("with a long comment") << withComment(whole, 60000) << false;
+        QTest::newRow("web page") << QByteArray("<!DOCTYPE html><html><body>Your download will start shortly.</body></html>") << true;
+        QTest::newRow("empty") << QByteArray() << true;
+    }
+
+    void missingZipEnd()
+    {
+        // Java refuses every one of these but the whole jar and the one with a comment, with "zip END header not found"
+        QFETCH(const QByteArray, contents);
+        QFETCH(const bool, missing);
+
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("mod.jar");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(contents), contents.size());
+        file.close();
+
+        QCOMPARE(ModUtils::isMissingZipEnd(path), missing);
+    }
+
+    void missingZipEndOfAFileThatIsGone()
+    {
+        // nothing can be told of a file that can't be read, so it doesn't count as damaged
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(!ModUtils::isMissingZipEnd(dir.filePath("gone.jar")));
     }
 };
 

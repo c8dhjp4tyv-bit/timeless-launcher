@@ -25,6 +25,13 @@ bool processLitemod(Mod& mod, ProcessingLevel level = ProcessingLevel::Full);
 /** Checks whether a file is valid as a mod or not. */
 bool validate(QFileInfo file);
 
+/**
+ * Whether the file lacks the end record of a zip, which is the first thing Java looks for in a jar and fails to open it
+ * without. The archive library reads a zip that was cut short up to where it ends, so this is what tells it from a whole one.
+ * A file that can't be read at all doesn't count, since that says nothing about it.
+ */
+bool isMissingZipEnd(const QString& path);
+
 bool processIconPNG(const Mod& mod, QByteArray&& raw_data, QPixmap* pixmap);
 bool loadIconFile(const Mod& mod, QPixmap* pixmap);
 }  // namespace ModUtils

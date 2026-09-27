@@ -57,7 +57,7 @@
 
 #include "minecraft/launch/AutoInstallJava.h"
 #include "minecraft/launch/BackupWorlds.h"
-#include "minecraft/launch/CheckDuplicateMods.h"
+#include "minecraft/launch/CheckModFiles.h"
 #include "minecraft/launch/ClaimAccount.h"
 #include "minecraft/launch/CreateGameFolders.h"
 #include "minecraft/launch/EnsureAvailableMemory.h"
@@ -1225,9 +1225,9 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
         process->appendStep(makeShared<ScanModFolders>(pptr));
     }
 
-    // two copies of one mod stop the game from starting, so say so before it gets that far
+    // damaged mod files and two copies of one mod stop the game from starting, so say so before it gets that far
     {
-        process->appendStep(makeShared<CheckDuplicateMods>(pptr));
+        process->appendStep(makeShared<CheckModFiles>(pptr));
     }
 
     // make sure we have enough RAM, warn the user if we don't

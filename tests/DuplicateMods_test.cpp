@@ -78,6 +78,24 @@ class DuplicateModsTest : public QObject {
         return timeout.isActive();
     }
 
+    /// A Fabric mod's jar that ends before its end record, as when its download was cut short, while the metadata at its start
+    /// is still whole
+    static bool writeCutFabricMod(const QString& path, const QString& id)
+    {
+        QByteArray data;
+        for (int i = 0; i < 20000; i++) {
+            data.append(static_cast<char>((i * 7919 + i / 13) % 256));
+        }
+        MMCZip::ArchiveWriter jar(path);
+        if (!jar.open() ||
+            !jar.addFile("fabric.mod.json", QString(R"({"schemaVersion": 1, "id": "%1", "version": "1.0.0"})").arg(id).toUtf8()) ||
+            !jar.addFile("assets/data.bin", data) || !jar.close()) {
+            return false;
+        }
+        QFile file(path);
+        return file.resize(file.size() * 6 / 10);
+    }
+
     static QModelIndex indexOf(ModFolderModel& model, const QString& fileName)
     {
         for (int row = 0; row < model.rowCount(); row++) {
@@ -89,6 +107,33 @@ class DuplicateModsTest : public QObject {
     }
 
    private slots:
+    void damaged()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+
+        QVERIFY(writeFabricMod(mods.filePath("whole.jar"), "whole"));
+        QVERIFY(writeCutFabricMod(mods.filePath("cut.jar"), "cut"));
+        // a web page saved in place of a mod
+        QFile page(mods.filePath("page.jar"));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        QVERIFY(page.write("<!DOCTYPE html><html><body>Your download will start shortly.</body></html>") > 0);
+        page.close();
+        // one that is turned off isn't loaded
+        QVERIFY(QFile::copy(page.fileName(), mods.filePath("other-page.jar.disabled")));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+        QCOMPARE(model.rowCount(), 4);
+
+        QCOMPARE(model.damagedMods(), QStringList({ "cut.jar", "page.jar" }));
+        // the archive library reads a jar that was cut short as far as it goes, which is how it passed for a whole mod
+        const auto cut = indexOf(model, "cut.jar");
+        QVERIFY(cut.isValid());
+        QCOMPARE(static_cast<const Mod&>(model.at(cut.row())).mod_id(), "cut");
+        QVERIFY(!static_cast<const Mod&>(model.at(indexOf(model, "whole.jar").row())).details().damaged);
+    }
+
     void duplicates()
     {
         QTemporaryDir mods;

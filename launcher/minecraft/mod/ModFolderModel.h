@@ -121,6 +121,9 @@ class ModFolderModel : public ResourceFolderModel {
      */
     QStringList olderDuplicates(ModPlatform::ModLoaderTypes loaders);
 
+    /** The file names of the enabled mods Java can't open, as when their download was cut short, which stop the mod loader too */
+    QStringList damagedMods();
+
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;
     void onParseFinished();

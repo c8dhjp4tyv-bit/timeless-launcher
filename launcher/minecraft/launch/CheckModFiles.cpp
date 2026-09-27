@@ -15,7 +15,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "CheckDuplicateMods.h"
+#include "CheckModFiles.h"
 
 #include <QPushButton>
 
@@ -25,10 +25,10 @@
 #include "minecraft/mod/ModFolderModel.h"
 #include "ui/dialogs/CustomMessageBox.h"
 
-void CheckDuplicateMods::executeTask()
+void CheckModFiles::executeTask()
 {
     auto* mods = m_parent->instance()->loaderModList();
-    // the mods were just scanned, and a mod's ID is only known once it has been read
+    // the mods were just scanned, and a mod's ID, like whether Java can open its file, is only known once it has been read
     if (mods->hasPendingParseTasks()) {
         m_waitForParsing = connect(mods, &ModFolderModel::parseFinished, this, [this, mods] {
             if (!mods->hasPendingParseTasks()) {
@@ -40,17 +40,83 @@ void CheckDuplicateMods::executeTask()
     check();
 }
 
-void CheckDuplicateMods::check()
+namespace {
+
+QModelIndexList indexesOf(ModFolderModel* mods, const QStringList& fileNames)
+{
+    QModelIndexList indexes;
+    for (int row = 0; row < mods->rowCount(); row++) {
+        if (fileNames.contains(mods->at(row).fileinfo().fileName())) {
+            indexes << mods->index(row, 0);
+        }
+    }
+    return indexes;
+}
+
+}  // namespace
+
+void CheckModFiles::check()
 {
     disconnect(m_waitForParsing);
 
-    // without a mod loader nothing reads the mods, and these are the loaders known to refuse to start with two copies of one
+    // without a mod loader nothing reads the mods, and these are the loaders known to stop at such files
     const auto loaders = m_parent->instance()->getPackProfile()->getModLoaders().value_or(ModPlatform::ModLoaderTypes()) &
                          (ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::Forge | ModPlatform::NeoForge);
-    const auto groups = !loaders ? QList<QStringList>() : m_parent->instance()->loaderModList()->duplicateGroups(loaders);
-    if (groups.isEmpty()) {
+    auto* mods = m_parent->instance()->loaderModList();
+    if (!loaders || (checkDamaged(mods) && checkDuplicates(mods, loaders))) {
         emitSucceeded();
-        return;
+    }
+}
+
+bool CheckModFiles::checkDamaged(ModFolderModel* mods)
+{
+    const auto damaged = mods->damagedMods();
+    if (damaged.isEmpty()) {
+        return true;
+    }
+
+    emit logLine(
+        tr("These mod files are damaged or aren't mods at all, and the mod loader will stop at them:\n  %1").arg(damaged.join("\n  ")),
+        MessageLevel::Warning);
+
+    auto* dialog = CustomMessageBox::selectable(
+        nullptr, tr("Damaged mod files"),
+        tr("These files in the mods folder are damaged or aren't mods at all, as when a download was cut short, and the mod loader "
+           "will stop at them:\n\n"
+           "%1\n\n"
+           "Turn Them Off takes them out of the game (the Mods page can turn them back on). Download them again to use them.")
+            .arg(damaged.join("\n")),
+        QMessageBox::Icon::Warning, QMessageBox::StandardButton::Cancel, QMessageBox::StandardButton::NoButton);
+    auto* turnOff = dialog->addButton(tr("Turn Them Off"), QMessageBox::AcceptRole);
+    auto* launchAnyway = dialog->addButton(tr("Launch Anyway"), QMessageBox::ActionRole);
+    dialog->setDefaultButton(turnOff);
+    dialog->setEscapeButton(QMessageBox::StandardButton::Cancel);
+    dialog->exec();
+    auto* choice = dialog->clickedButton();
+    dialog->deleteLater();
+
+    if (choice == turnOff) {
+        if (!mods->setModsEnabled(indexesOf(mods, damaged), EnableAction::DISABLE)) {
+            const auto reason = tr("Couldn't turn off the damaged mod files");
+            emit logLine(reason, MessageLevel::Fatal);
+            emitFailed(reason);
+            return false;
+        }
+        emit logLine(tr("Turned off the damaged mod files:\n  %1").arg(damaged.join("\n  ")), MessageLevel::Launcher);
+    } else if (choice != launchAnyway) {
+        const auto reason = tr("Some mod files are damaged");
+        emit logLine(reason, MessageLevel::Fatal);
+        emitFailed(reason);
+        return false;
+    }
+    return true;
+}
+
+bool CheckModFiles::checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders)
+{
+    const auto groups = mods->duplicateGroups(loaders);
+    if (groups.isEmpty()) {
+        return true;
     }
 
     QStringList lines;
@@ -61,7 +127,6 @@ void CheckDuplicateMods::check()
         tr("These mods are enabled more than once, and the mod loader will refuse to start with them:\n  %1").arg(lines.join("\n  ")),
         MessageLevel::Warning);
 
-    auto* mods = m_parent->instance()->loaderModList();
     const auto older = mods->olderDuplicates(loaders);
     auto* dialog = CustomMessageBox::selectable(
         nullptr, tr("Duplicate mods"),
@@ -80,24 +145,18 @@ void CheckDuplicateMods::check()
     dialog->deleteLater();
 
     if (choice == turnOff) {
-        QModelIndexList indexes;
-        for (int row = 0; row < mods->rowCount(); row++) {
-            if (older.contains(mods->at(row).fileinfo().fileName())) {
-                indexes << mods->index(row, 0);
-            }
-        }
-        if (!mods->setModsEnabled(indexes, EnableAction::DISABLE)) {
+        if (!mods->setModsEnabled(indexesOf(mods, older), EnableAction::DISABLE)) {
             const auto reason = tr("Couldn't turn off the older copies of the mods");
             emit logLine(reason, MessageLevel::Fatal);
             emitFailed(reason);
-            return;
+            return false;
         }
         emit logLine(tr("Turned off the older copies:\n  %1").arg(older.join("\n  ")), MessageLevel::Launcher);
     } else if (choice != launchAnyway) {
         const auto reason = tr("Some mods are enabled more than once");
         emit logLine(reason, MessageLevel::Fatal);
         emitFailed(reason);
-        return;
+        return false;
     }
-    emitSucceeded();
+    return true;
 }

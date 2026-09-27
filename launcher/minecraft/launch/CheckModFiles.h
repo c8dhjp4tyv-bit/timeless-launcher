@@ -18,21 +18,27 @@
 #pragma once
 
 #include "launch/LaunchStep.h"
+#include "modplatform/ModIndex.h"
 
-/// Mod loaders refuse to start with two copies of a mod, so rather than let the game fail after loading for a while, this
-/// names them and asks whether to launch anyway
-class CheckDuplicateMods : public LaunchStep {
+class ModFolderModel;
+
+/// Mod loaders stop at a mod file Java can't open, and refuse to start with two copies of a mod, so rather than let the game
+/// fail after loading for a while, this names such files and offers to turn them off
+class CheckModFiles : public LaunchStep {
     Q_OBJECT
 
    public:
-    explicit CheckDuplicateMods(LaunchTask* parent) : LaunchStep(parent) {}
-    ~CheckDuplicateMods() override = default;
+    explicit CheckModFiles(LaunchTask* parent) : LaunchStep(parent) {}
+    ~CheckModFiles() override = default;
 
     void executeTask() override;
     bool canAbort() const override { return false; }
 
    private:
     void check();
+    /// Each of these says what it found and asks what to do, and returns whether the launch goes on; it has failed if not
+    bool checkDamaged(ModFolderModel* mods);
+    bool checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders);
 
     QMetaObject::Connection m_waitForParsing;
 };

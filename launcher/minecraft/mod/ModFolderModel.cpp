@@ -92,10 +92,12 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
     int column = index.column();
 
     const auto duplicates = duplicatesOf(at(row).internalId());
+    // like two copies of a mod, this stops the mod loader, but only while it's enabled
+    const auto damaged = at(row).enabled() && at(row).details().damaged;
 
     switch (role) {
         case Qt::BackgroundRole:
-            if (!duplicates.isEmpty()) {
+            if (!duplicates.isEmpty() || damaged) {
                 return QBrush(QColor(255, 0, 0, 40));
             }
             return rowBackground(row);
@@ -135,7 +137,7 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
             if (column == ImageColumn) {
                 return at(row).icon({ 32, 32 }, Qt::AspectRatioMode::KeepAspectRatioByExpanding);
             }
-            if (column == NameColumn && !duplicates.isEmpty()) {
+            if (column == NameColumn && (!duplicates.isEmpty() || damaged)) {
                 return QIcon::fromTheme("status-bad");
             }
             break;
@@ -167,6 +169,10 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
                         tooltip += "\n" + tr("Duplicate: %1 has the same mod ID (%2). The game won't start with more than one of them "
                                              "enabled, so disable or delete all but one.")
                                               .arg(duplicates.join(", "), at(row).mod_id());
+                    }
+                    if (damaged) {
+                        tooltip += "\n" + tr("Damaged: this file is cut short or isn't a mod at all, as when its download was cut short, "
+                                             "and the mod loader will stop at it. Download it again, or disable it.");
                     }
                     return tooltip;
                 }
@@ -394,6 +400,18 @@ QList<QStringList> ModFolderModel::duplicateGroups(ModPlatform::ModLoaderTypes l
         }
     }
     return groups;
+}
+
+QStringList ModFolderModel::damagedMods()
+{
+    QStringList damaged;
+    for (auto* mod : allMods()) {
+        if (mod->enabled() && mod->details().damaged) {
+            damaged << mod->fileinfo().fileName();
+        }
+    }
+    damaged.sort();
+    return damaged;
 }
 
 QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)

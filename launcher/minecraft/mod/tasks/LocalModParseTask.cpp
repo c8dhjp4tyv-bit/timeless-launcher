@@ -2,12 +2,14 @@
 
 #include <qdcss.h>
 #include <toml++/toml.h>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QRegularExpression>
 #include <QString>
+#include <algorithm>
 
 #include "Json.h"
 #include "archive/ArchiveReader.h"
@@ -686,6 +688,30 @@ bool processLitemod(Mod& mod, [[maybe_unused]] ProcessingLevel level)
     return false;  // no valid litemod.json found in archive
 }
 
+bool isMissingZipEnd(const QString& path)
+{
+    // The record takes 22 bytes and ends with a comment of up to 65535, so, as Java does, it is looked for in the last 65557
+    // bytes of the file, from their end.
+    constexpr qint64 recordSize = 22;
+    constexpr qint64 window = recordSize + 0xFFFF;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    if (!file.seek(std::max<qint64>(0, file.size() - window))) {
+        return false;
+    }
+    const auto tail = file.readAll();
+    static const QByteArray s_signature("PK\x05\x06", 4);
+    for (auto at = tail.lastIndexOf(s_signature); at >= 0; at = at > 0 ? tail.lastIndexOf(s_signature, at - 1) : -1) {
+        if (at + recordSize <= tail.size()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /** Checks whether a file is valid as a mod or not. */
 bool validate(QFileInfo file)
 {
@@ -760,6 +786,9 @@ void LocalModParseTask::executeTask()
     ModUtils::process(mod, ModUtils::ProcessingLevel::Full);
 
     m_result->details = mod.details();
+    if (mod.type() == ResourceType::ZIPFILE || mod.type() == ResourceType::LITEMOD) {
+        m_result->details.damaged = ModUtils::isMissingZipEnd(m_modFile.filePath());
+    }
 
     if (m_aborted)
         emitAborted();

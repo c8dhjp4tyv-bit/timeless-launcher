@@ -145,6 +145,9 @@ struct ModDetails {
     /* The loaders that read the metadata file these details come from, e.g. Forge and NeoForge for META-INF/mods.toml */
     ModPlatform::ModLoaderTypes loaders = {};
 
+    /* Whether Java can't open the file as a jar, as when its download was cut short or a web page was saved in its place */
+    bool damaged = false;
+
     ModDetails() = default;
 
     /** Metadata should be handled manually to properly set the mod status. */
@@ -161,6 +164,7 @@ struct ModDetails {
         , icon_file(other.icon_file)
         , dependencies(other.dependencies)
         , loaders(other.loaders)
+        , damaged(other.damaged)
     {}
 
     ModDetails& operator=(const ModDetails& other) = default;
