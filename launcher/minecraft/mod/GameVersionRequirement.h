@@ -40,6 +40,9 @@ class GameVersionRequirement {
     QString text() const;
     /// Whether the mod takes that version of Minecraft
     bool accepts(const QString& minecraftVersion) const;
+    /// Whether a mod that needs another takes that version of it, which unlike a version of Minecraft may carry build metadata
+    /// after a +, which Fabric and Quilt leave out of comparisons
+    bool acceptsModVersion(const QString& version) const;
 
     bool operator==(const GameVersionRequirement& other) const = default;
 

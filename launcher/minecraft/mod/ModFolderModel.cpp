@@ -189,8 +189,8 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
                     }
                     if (!missing.isEmpty()) {
                         tooltip += "\n" + tr("Needs other mods: it can't be loaded without %1, and the mod loader won't start the game "
-                                             "without them. Add them, or disable this mod.")
-                                              .arg(describeMissing(missing));
+                                             "without them. Add them, in the versions it needs, or disable this mod.")
+                                              .arg(missing.join(", "));
                     }
                     return tooltip;
                 }
@@ -484,6 +484,25 @@ ModPlatform::ModLoaderTypes ModFolderModel::modLoaders() const
     return m_instance->getPackProfile()->getModLoaders().value_or(ModPlatform::ModLoaderTypes());
 }
 
+QHash<QString, QStringList> ModFolderModel::builtInMods(ModPlatform::ModLoaderTypes loaders) const
+{
+    // MixinExtras comes with Fabric, Quilt and newer versions of Forge and NeoForge, and NeoForge for Minecraft 1.20.1 is still
+    // called forge. Their versions aren't told, but for the loader's own: the game's is checked on its own, and Quilt gives Fabric
+    // mods a version of Fabric Loader of its own.
+    QHash<QString, QStringList> mods{ { "minecraft", {} },    { "java", {} },  { "mixinextras", {} }, { "fabricloader", {} },
+                                      { "quilt_loader", {} }, { "forge", {} }, { "neoforge", {} } };
+    if (m_instance != nullptr) {
+        auto* const profile = m_instance->getPackProfile();
+        if (loaders.testFlag(ModPlatform::Fabric)) {
+            mods["fabricloader"] = QStringList{ profile->getComponentVersion("net.fabricmc.fabric-loader") };
+        }
+        if (loaders.testFlag(ModPlatform::Quilt)) {
+            mods["quilt_loader"] = QStringList{ profile->getComponentVersion("org.quiltmc.quilt-loader") };
+        }
+    }
+    return mods;
+}
+
 QList<ModFolderModel::MissingMods> ModFolderModel::modsMissingDependencies(ModPlatform::ModLoaderTypes loaders, const QSet<Mod*>& turnedOff)
 {
     loaders &= ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::Forge | ModPlatform::NeoForge;
@@ -504,9 +523,10 @@ QList<ModFolderModel::MissingMods> ModFolderModel::modsMissingDependencies(ModPl
         return {};
     }
 
-    // what the loaders provide themselves: MixinExtras comes with Fabric, Quilt and newer versions of Forge and NeoForge, and
-    // NeoForge for Minecraft 1.20.1 is still called forge
-    QSet<QString> provided = { "minecraft", "java", "mixinextras", "fabricloader", "quilt_loader", "forge", "neoforge" };
+    // the versions each ID is provided in; a mod the loader provides itself, in a version that isn't told, takes any mod needing
+    // it whatever else provides it, as a copy of MixinExtras nested in a mod may be older than the loader's own
+    const auto builtIn = builtInMods(loaders);
+    QHash<QString, QStringList> provided;
     const auto isOn = [&turnedOff](Mod* mod) { return mod->enabled() && !turnedOff.contains(mod); };
     for (auto* mod : allMods()) {
         const auto& details = mod->details();
@@ -518,7 +538,9 @@ QList<ModFolderModel::MissingMods> ModFolderModel::modsMissingDependencies(ModPl
             return {};
         }
         if (isLoadedBy(*mod, loaders)) {
-            provided.unite(QSet<QString>(details.providedMods.begin(), details.providedMods.end()));
+            for (const auto& id : details.providedMods) {
+                provided[id] << details.providedVersions.value(id);
+            }
         }
     }
 
@@ -527,14 +549,27 @@ QList<ModFolderModel::MissingMods> ModFolderModel::modsMissingDependencies(ModPl
         if (!isOn(mod) || !isLoadedBy(*mod, loaders)) {
             continue;
         }
-        QStringList ids;
-        for (const auto& id : mod->details().requiredMods) {
-            if (!provided.contains(id) && !ids.contains(id)) {
-                ids << id;
+        const auto& details = mod->details();
+        MissingMods found{ .mod = mod };
+        for (const auto& id : details.requiredMods) {
+            const bool anyVersion = builtIn.contains(id) && builtIn.value(id).isEmpty();
+            if (anyVersion || found.ids.contains(id) || found.otherVersions.contains(id)) {
+                continue;
+            }
+            if (!builtIn.contains(id) && !provided.contains(id)) {
+                found.ids << id;
+                continue;
+            }
+            // a version that can't be read, as a placeholder a build left in, may be the one it needs
+            const auto versions = builtIn.value(id) + provided.value(id);
+            const auto requirement = details.requiredVersions.value(id);
+            if (!versions.isEmpty() &&
+                std::ranges::none_of(versions, [&requirement](const QString& version) { return requirement.acceptsModVersion(version); })) {
+                found.otherVersions << id;
             }
         }
-        if (!ids.isEmpty()) {
-            missing.append({ .mod = mod, .ids = ids });
+        if (!found.ids.isEmpty() || !found.otherVersions.isEmpty()) {
+            missing << found;
         }
     }
     std::ranges::sort(
@@ -554,6 +589,21 @@ QList<Mod*> ModFolderModel::disabledProviders(const QString& id, ModPlatform::Mo
     return providers;
 }
 
+QStringList ModFolderModel::providedVersions(const QString& id, ModPlatform::ModLoaderTypes loaders)
+{
+    auto versions = builtInMods(loaders).value(id);
+    for (auto* mod : allMods()) {
+        if (mod->enabled() && isLoadedBy(*mod, loaders)) {
+            for (const auto& version : mod->details().providedVersions.value(id)) {
+                if (!versions.contains(version)) {
+                    versions << version;
+                }
+            }
+        }
+    }
+    return versions;
+}
+
 QString ModFolderModel::describeModId(const QString& id)
 {
     // as fabric-api-base and fabric-screen-api-v1, where fabric-api itself is the whole of it
@@ -561,19 +611,17 @@ QString ModFolderModel::describeModId(const QString& id)
     return s_fabricApiModule.match(id).hasMatch() ? tr("%1 (part of Fabric API)").arg(id) : id;
 }
 
-QString ModFolderModel::describeMissing(const QStringList& ids) const
+QStringList ModFolderModel::describeNeeds(const MissingMods& missing, ModPlatform::ModLoaderTypes loaders)
 {
-    const auto loaders = modLoaders();
-    QStringList described;
-    for (const auto& id : ids) {
-        bool turnedOff = false;
-        for (int row = 0; row < rowCount() && !turnedOff; row++) {
-            const auto& mod = at(row);
-            turnedOff = !mod.enabled() && isLoadedBy(mod, loaders) && mod.details().providedMods.contains(id);
-        }
-        described << (turnedOff ? tr("%1 (turned off)").arg(id) : describeModId(id));
+    QStringList needs;
+    for (const auto& id : missing.ids) {
+        needs << (disabledProviders(id, loaders).isEmpty() ? describeModId(id) : tr("%1 (turned off)").arg(id));
     }
-    return described.join(", ");
+    for (const auto& id : missing.otherVersions) {
+        needs << tr("%1 %2 (%3 is here)")
+                     .arg(id, missing.mod->details().requiredVersions.value(id).text(), providedVersions(id, loaders).join(", "));
+    }
+    return needs;
 }
 
 void ModFolderModel::updateMissingDependencies()
@@ -582,9 +630,10 @@ void ModFolderModel::updateMissingDependencies()
     if (hasPendingParseTasks()) {
         return;
     }
+    const auto loaders = modLoaders();
     QHash<QString, QStringList> missing;
-    for (const auto& [mod, ids] : modsMissingDependencies(modLoaders())) {
-        missing.insert(mod->internalId(), ids);
+    for (const auto& found : modsMissingDependencies(loaders)) {
+        missing.insert(found.mod->internalId(), describeNeeds(found, loaders));
     }
     if (missing == m_missingDependencies) {
         return;

@@ -36,6 +36,15 @@ QString largestIcon(const QJsonObject& icons)
     return bestIcon;
 }
 
+/// Notes that the file gives the mod loader the mod with that ID, in that version
+void provide(ModDetails& details, const QString& id, const QString& version)
+{
+    if (!details.providedMods.contains(id)) {
+        details.providedMods << id;
+    }
+    details.providedVersions[id] << version;
+}
+
 /// A string, or an array of strings, as Fabric and Quilt give versions; anything else, or an array holding more than strings,
 /// gives nothing
 QStringList stringsOf(const QJsonValue& value)
@@ -303,7 +312,8 @@ ModDetails ReadMCModTOML(QByteArray contents)
     for (const auto& mod : *tomlModsArr) {
         if (const auto* table = mod.as_table()) {
             if (const auto* modId = (*table)["modId"].as_string()) {
-                details.providedMods << QString::fromStdString(modId->get());
+                const auto* version = (*table)["version"].as_string();
+                provide(details, QString::fromStdString(modId->get()), version ? QString::fromStdString(version->get()) : QString());
             }
         }
     }
@@ -327,6 +337,10 @@ ModDetails ReadMCModTOML(QByteArray contents)
                 const bool onlyOnServers = side != nullptr && side->get() == "SERVER";
                 if (id != nullptr && required && !onlyOnServers) {
                     details.requiredMods << QString::fromStdString(id->get());
+                    if (const auto* range = (*table)["versionRange"].as_string()) {
+                        details.requiredVersions.insert(details.requiredMods.last(),
+                                                        GameVersionRequirement::fromMaven(QString::fromStdString(range->get())));
+                    }
                 }
             }
         }
@@ -433,10 +447,20 @@ ModDetails ReadFabricModInfo(QByteArray contents)
             }
         }
 
-        // what the loader needs for the mod, and what the file gives it besides the mod: the IDs the mod says it provides, and
-        // the mods nested in it
-        details.requiredMods = object.value("depends").toObject().keys();
-        details.providedMods << stringsOf(object.value("provides"));
+        // what the loader needs for the mod, in which versions, and what the file gives it besides the mod: the IDs the mod says it
+        // provides, in the mod's version, and the mods nested in it
+        const auto depends = object.value("depends").toObject();
+        details.requiredMods = depends.keys();
+        for (auto it = depends.begin(); it != depends.end(); ++it) {
+            if (const auto versions = GameVersionRequirement::fromFabric(stringsOf(it.value())); versions.isSet()) {
+                details.requiredVersions.insert(it.key(), versions);
+            }
+        }
+        if (!details.mod_id.isEmpty()) {
+            for (const auto& id : stringsOf(object.value("provides"))) {
+                provide(details, id, details.version);
+            }
+        }
         for (const auto& jar : object.value("jars").toArray()) {
             details.nestedJars << jar.toObject().value("file").toString();
         }
@@ -444,6 +468,7 @@ ModDetails ReadFabricModInfo(QByteArray contents)
     }
     if (!details.mod_id.isEmpty()) {
         details.providedMods.prepend(details.mod_id);
+        details.providedVersions[details.mod_id].prepend(details.version);
     }
     return details;
 }
@@ -467,11 +492,12 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
 
             // what the file gives the loader besides the mod: the IDs the mod says it provides, each alone or in an object with its
             // version, and the mods nested in it
-            details.providedMods << details.mod_id;
+            provide(details, details.mod_id, details.version);
             for (const auto& provided : modInfo.value("provides").toArray()) {
-                const auto id = provided.isObject() ? provided.toObject().value("id").toString() : provided.toString();
+                const auto object = provided.toObject();
+                const auto id = provided.isObject() ? object.value("id").toString() : provided.toString();
                 if (!id.isEmpty()) {
-                    details.providedMods << id.section(':', -1);
+                    provide(details, id.section(':', -1), object.value("version").toString(details.version));
                 }
             }
             for (const auto& jar : modInfo.value("jars").toArray()) {
@@ -554,6 +580,10 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
                 // one needed unless another mod is there may not be needed at all
                 if (!modId.isEmpty() && !dependency.toObject().contains("unless")) {
                     details.requiredMods << modId;
+                    const auto versions = GameVersionRequirement::fromFabric(stringsOf(dependency.toObject().value("versions")));
+                    if (versions.isSet()) {
+                        details.requiredVersions.insert(modId, versions);
+                    }
                 }
                 if (!modId.isEmpty() && modId != "minecraft" && !modId.startsWith("quilt_")) {
                     details.dependencies.append(modId);
@@ -758,6 +788,14 @@ bool readMetadata(MMCZip::ArchiveReader& zip, ModDetails& details)
         details = ReadNilModInfo(nilData, nilFilePath);
         isValid = true;
     }
+    // a Forge mod whose version comes from the manifest provides itself in that version
+    for (auto& versions : details.providedVersions) {
+        for (auto& version : versions) {
+            if (version == "${file.jarVersion}") {
+                version = details.version;
+            }
+        }
+    }
     return isValid;
 }
 
@@ -785,7 +823,11 @@ void readNestedMod(const QByteArray& jar, const QString& name, ModDetails& detai
         return;
     }
     readNestedMods(nested, nestedDetails, levels);
-    details.providedMods << nestedDetails.providedMods;
+    for (const auto& id : std::as_const(nestedDetails.providedMods)) {
+        for (const auto& version : nestedDetails.providedVersions.value(id)) {
+            provide(details, id, version);
+        }
+    }
     details.unreadNestedMods |= nestedDetails.unreadNestedMods;
 }
 

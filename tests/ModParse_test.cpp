@@ -233,6 +233,10 @@ class ModParseTest : public QObject {
             "jars": [{"file": "META-INF/jars/fabric-api-base.jar"}, {"file": "META-INF/jars/fabric-rendering-fluids-v1.jar"}])"));
         QCOMPARE(details.requiredMods, (QStringList{ "fabric-rendering-fluids-v1", "fabricloader", "minecraft" }));
         QCOMPARE(details.providedMods, (QStringList{ "example", "example-old" }));
+        // and in which versions, the ones it provides being in its own
+        QCOMPARE(details.requiredVersions.value("fabric-rendering-fluids-v1").text(), ">=0.1");
+        QCOMPARE(details.requiredVersions.value("minecraft").text(), "1.20.1");
+        QCOMPARE(details.providedVersions.value("example-old"), QStringList{ "1.0.0" });
         QCOMPARE(details.nestedJars, (QStringList{ "META-INF/jars/fabric-api-base.jar", "META-INF/jars/fabric-rendering-fluids-v1.jar" }));
         QVERIFY(!details.serverOnly);
 
@@ -252,6 +256,11 @@ class ModParseTest : public QObject {
         // one needed unless another mod is there, and one of several, may not be needed at all
         QCOMPARE(details.requiredMods, (QStringList{ "quilt_loader", "qsl" }));
         QCOMPARE(details.providedMods, (QStringList{ "example", "old_example", "older_example" }));
+        QCOMPARE(details.requiredVersions.value("qsl").text(), ">=6");
+        QVERIFY(!details.requiredVersions.contains("quilt_loader"));
+        // an object may give the version it provides the ID in, which is otherwise the mod's own
+        QCOMPARE(details.providedVersions.value("old_example"), QStringList{ "1" });
+        QCOMPARE(details.providedVersions.value("older_example"), QStringList{ "1" });
         QCOMPARE(details.nestedJars, QStringList{ "META-INF/jars/library.jar" });
         QVERIFY(!details.serverOnly);
 
@@ -298,7 +307,9 @@ class ModParseTest : public QObject {
         Mod mod{ QFileInfo(path) };
         QVERIFY(ModUtils::process(mod));
         QCOMPARE(mod.details().providedMods, (QStringList{ "example", "example_addon" }));
+        QCOMPARE(mod.details().providedVersions.value("example_addon"), QStringList{ "1" });
         QCOMPARE(mod.details().requiredMods, required);
+        QCOMPARE(mod.details().requiredVersions.value("jei").text(), required.contains("jei") ? "[15,)" : "");
     }
 
     void nestedMods()
@@ -324,6 +335,7 @@ class ModParseTest : public QObject {
         Mod mod{ QFileInfo(path) };
         QVERIFY(ModUtils::process(mod));
         QCOMPARE(mod.details().providedMods, (QStringList{ "example", "middle", "inner", "inner-old", "org_example_library" }));
+        QCOMPARE(mod.details().providedVersions.value("inner-old"), QStringList{ "1.0.0" });
         QVERIFY(!mod.details().unreadNestedMods);
 
         // what the basic information of a mod needs doesn't include what is nested in it
@@ -476,6 +488,7 @@ class ModParseTest : public QObject {
         Mod mod{ QFileInfo(path) };
         QVERIFY(ModUtils::process(mod));
         QCOMPARE(mod.version(), "1.2.3");
+        QCOMPARE(mod.details().providedVersions.value("example"), QStringList{ "1.2.3" });
     }
 
     void missingZipEndOfAFileThatIsGone()

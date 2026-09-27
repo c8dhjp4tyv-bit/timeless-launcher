@@ -116,6 +116,34 @@ class GameVersionRequirementTest : public QObject {
         QCOMPARE(GameVersionRequirement::fromMaven(range).accepts(minecraft), accepted);
     }
 
+    void modVersion_data()
+    {
+        QTest::addColumn<QStringList>("anyOf");
+        QTest::addColumn<QString>("version");
+        QTest::addColumn<bool>("accepted");
+
+        // Fabric leaves build metadata after a + out of comparisons, on either side
+        QTest::newRow("same, with build metadata") << QStringList{ "0.5.11" } << "0.5.11+mc1.20.1" << true;
+        QTest::newRow("another") << QStringList{ "0.5.8" } << "0.5.11+mc1.20.1" << false;
+        QTest::newRow("both with build metadata") << QStringList{ "0.5.11+mc1.20.1" } << "0.5.11+mc1.20.2" << true;
+        QTest::newRow("at least") << QStringList{ ">=0.90.0" } << "0.92.2+1.20.1" << true;
+        QTest::newRow("too old") << QStringList{ ">=0.95" } << "0.92.2+1.20.1" << false;
+        QTest::newRow("same major") << QStringList{ "^0.5.8" } << "0.9.0" << true;
+        QTest::newRow("any") << QStringList{ "*" } << "0.1" << true;
+        // what can't be read may be what is needed
+        QTest::newRow("pre-release") << QStringList{ "0.5.8" } << "0.6.0-beta.2" << true;
+        QTest::newRow("placeholder") << QStringList{ ">=1" } << "${version}" << true;
+    }
+
+    void modVersion()
+    {
+        QFETCH(const QStringList, anyOf);
+        QFETCH(const QString, version);
+        QFETCH(const bool, accepted);
+
+        QCOMPARE(GameVersionRequirement::fromFabric(anyOf).acceptsModVersion(version), accepted);
+    }
+
     void text()
     {
         QCOMPARE(GameVersionRequirement::fromFabric({ ">=1.20.1  <1.21", "1.19.2" }).text(), ">=1.20.1 <1.21, 1.19.2");

@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -155,9 +156,15 @@ struct ModDetails {
     /* The IDs of the mods the mod loader won't load this one without, as its metadata lists them, the loader's own included */
     QStringList requiredMods;
 
+    /* The versions of those the mod needs, for the ones it names versions of */
+    QHash<QString, GameVersionRequirement> requiredVersions;
+
     /* Every ID the mod loader knows the file by: the mod's own, those its metadata says it provides, and those of the mods nested
        in it */
     QStringList providedMods;
+
+    /* The versions the file provides each of those in */
+    QHash<QString, QStringList> providedVersions;
 
     /* The jars nested in the file that its metadata lists, which the mod loader loads as mods of their own */
     QStringList nestedJars;
@@ -187,7 +194,9 @@ struct ModDetails {
         , damaged(other.damaged)
         , minecraft(other.minecraft)
         , requiredMods(other.requiredMods)
+        , requiredVersions(other.requiredVersions)
         , providedMods(other.providedMods)
+        , providedVersions(other.providedVersions)
         , nestedJars(other.nestedJars)
         , unreadNestedMods(other.unreadNestedMods)
         , serverOnly(other.serverOnly)

@@ -219,16 +219,21 @@ bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoad
     }
     QStringList turnOn;
     QStringList lines;
-    for (const auto& [mod, ids] : missing) {
-        for (const auto& id : ids) {
+    for (const auto& found : missing) {
+        for (const auto& id : found.ids + found.otherVersions) {
+            const auto requirement = found.mod->details().requiredVersions.value(id);
             for (const auto* provider : mods->disabledProviders(id, loaders)) {
                 const auto fileName = provider->fileinfo().fileName();
                 const auto& details = provider->details();
-                if (details.damaged || !details.minecraft.accepts(minecraft) ||
+                const auto versions = details.providedVersions.value(id);
+                const bool neededVersion = std::ranges::any_of(
+                    versions, [&requirement](const QString& version) { return requirement.acceptsModVersion(version); });
+                if (details.damaged || !details.minecraft.accepts(minecraft) || !neededVersion ||
                     (enabledIds.contains(provider->mod_id()) && !turnOn.contains(fileName))) {
                     continue;
                 }
-                lines << tr("%1 needs %2, which %3 provides").arg(mod->fileinfo().fileName(), id, fileName);
+                const auto needed = requirement.isSet() ? tr("%1 %2").arg(id, requirement.text()) : id;
+                lines << tr("%1 needs %2, which %3 provides").arg(found.mod->fileinfo().fileName(), needed, fileName);
                 if (!turnOn.contains(fileName)) {
                     turnOn << fileName;
                     enabledIds << provider->mod_id();
@@ -268,17 +273,15 @@ bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoad
     // turning a mod off leaves out whatever needs it too, and so on
     QSet<Mod*> turnOff;
     for (auto found = missing; !found.isEmpty(); found = mods->modsMissingDependencies(loaders, turnOff)) {
-        for (const auto& [mod, ids] : found) {
-            turnOff << mod;
+        for (const auto& more : found) {
+            turnOff << more.mod;
         }
     }
     lines.clear();
-    for (const auto& [mod, ids] : missing) {
-        QStringList described;
-        for (const auto& id : ids) {
-            described << ModFolderModel::describeModId(id);
-        }
-        lines << tr("%1 needs %2").arg(mod->fileinfo().fileName(), described.join(", "));
+    bool loaderVersion = false;
+    for (const auto& found : missing) {
+        lines << tr("%1 needs %2").arg(found.mod->fileinfo().fileName(), mods->describeNeeds(found, loaders).join(", "));
+        loaderVersion |= found.otherVersions.contains("fabricloader") || found.otherVersions.contains("quilt_loader");
     }
     QStringList fileNames;
     QStringList others;
@@ -292,14 +295,18 @@ bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoad
         }
     }
 
-    emit logLine(
-        tr("These mods need mods that aren't here, and the mod loader won't start the game without them:\n  %1").arg(lines.join("\n  ")),
-        MessageLevel::Warning);
-    auto text = tr("Some mods need mods that aren't here, and the game won't start without them:\n\n"
+    emit logLine(tr("These mods need mods that aren't here, or other versions of them, and the mod loader won't start the game "
+                    "without them:\n  %1")
+                     .arg(lines.join("\n  ")),
+                 MessageLevel::Warning);
+    auto text = tr("Some mods need mods that aren't here, or other versions of them, and the game won't start without them:\n\n"
                    "%1\n\n"
-                   "Turn Them Off takes these mods out of the game (the Mods page can turn them back on). Add the mods they need to "
-                   "use them.")
+                   "Turn Them Off takes these mods out of the game (the Mods page can turn them back on). Add the mods they need, "
+                   "in the versions they need, to use them.")
                     .arg(lines.join("\n"));
+    if (loaderVersion) {
+        text += ' ' + tr("The version of the mod loader is picked on the Version page of the instance.");
+    }
     if (!others.isEmpty()) {
         text += "\n\n" + tr("It turns these off too, as they need those in turn:\n\n%1").arg(others.join("\n"));
     }
@@ -310,6 +317,6 @@ bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoad
                          .fileNames = fileNames,
                          .done = tr("Turned off the mods that need mods that aren't here:"),
                          .failed = tr("Couldn't turn off the mods that need mods that aren't here"),
-                         .canceled = tr("Some mods need mods that aren't here"),
+                         .canceled = tr("Some mods need mods that aren't here, or other versions of them"),
                      }) != Answer::Stop;
 }

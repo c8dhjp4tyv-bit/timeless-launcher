@@ -274,3 +274,8 @@ bool GameVersionRequirement::accepts(const QString& minecraftVersion) const
     }
     return false;
 }
+
+bool GameVersionRequirement::acceptsModVersion(const QString& version) const
+{
+    return accepts(m_syntax == Syntax::Fabric ? version.section('+', 0, 0) : version);
+}
