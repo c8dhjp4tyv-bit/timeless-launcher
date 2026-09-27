@@ -307,6 +307,11 @@ void PackInstallTask::deleteExistingFiles()
     }
 }
 
+bool PackInstallTask::isInsideGameFolder(const QString& path) const
+{
+    return QUrl::fromLocalFile(FS::PathCombine(m_stagingPath, "minecraft")).isParentOf(QUrl::fromLocalFile(path));
+}
+
 QString PackInstallTask::getDirForModType(ModType type, const QString& raw)
 {
     switch (type) {
@@ -803,6 +808,12 @@ void PackInstallTask::downloadMods()
             m_jobPtr->addNetAction(dl);
 
             auto path = FS::PathCombine(m_stagingPath, "minecraft", relpath, mod.file);
+            if (!isInsideGameFolder(path)) {
+                emitFailed(tr("One of the files has a path that leads to an arbitrary location (%1). This is a security risk and isn't "
+                              "allowed.")
+                               .arg(mod.file));
+                return;
+            }
 
             if (mod.type == ModType::Forge) {
                 auto ver = getComponentVersion("net.minecraftforge", mod.version);
@@ -872,6 +883,12 @@ void PackInstallTask::downloadMods()
                     }
 
                     auto path = FS::PathCombine(m_stagingPath, "minecraft", relpath, mod.file);
+                    if (!isInsideGameFolder(path)) {
+                        emitFailed(tr("One of the files has a path that leads to an arbitrary location (%1). This is a security risk "
+                                      "and isn't allowed.")
+                                       .arg(mod.file));
+                        return;
+                    }
 
                     if (mod.type == ModType::Forge) {
                         auto ver = getComponentVersion("net.minecraftforge", mod.version);
