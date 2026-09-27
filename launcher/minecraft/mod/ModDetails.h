@@ -152,6 +152,22 @@ struct ModDetails {
     /* The versions of Minecraft the mod's own metadata says it works with, which its mod loader holds it to */
     GameVersionRequirement minecraft;
 
+    /* The IDs of the mods the mod loader won't load this one without, as its metadata lists them, the loader's own included */
+    QStringList requiredMods;
+
+    /* Every ID the mod loader knows the file by: the mod's own, those its metadata says it provides, and those of the mods nested
+       in it */
+    QStringList providedMods;
+
+    /* The jars nested in the file that its metadata lists, which the mod loader loads as mods of their own */
+    QStringList nestedJars;
+
+    /* Whether a mod nested in the file couldn't be read, so that what the file provides isn't all known */
+    bool unreadNestedMods = false;
+
+    /* Whether the mod loader leaves the mod out of the game, as Fabric and Quilt do a mod made only for servers */
+    bool serverOnly = false;
+
     ModDetails() = default;
 
     /** Metadata should be handled manually to properly set the mod status. */
@@ -170,6 +186,11 @@ struct ModDetails {
         , loaders(other.loaders)
         , damaged(other.damaged)
         , minecraft(other.minecraft)
+        , requiredMods(other.requiredMods)
+        , providedMods(other.providedMods)
+        , nestedJars(other.nestedJars)
+        , unreadNestedMods(other.unreadNestedMods)
+        , serverOnly(other.serverOnly)
     {}
 
     ModDetails& operator=(const ModDetails& other) = default;

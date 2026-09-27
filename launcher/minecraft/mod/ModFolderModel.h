@@ -130,6 +130,22 @@ class ModFolderModel : public ResourceFolderModel {
      */
     QList<Mod*> otherGameVersionMods(const QString& minecraftVersion);
 
+    /** An enabled mod its mod loader won't load, as mods it needs aren't there */
+    struct MissingMods {
+        Mod* mod = nullptr;
+        /** The IDs of the mods it needs that no enabled mod provides */
+        QStringList ids;
+    };
+    /**
+     * The enabled mods these loaders read that need mods no enabled mod provides, by file name, as if the given ones were turned
+     * off too. None are when a mod that may provide them couldn't be read, or the loader was told to change what mods need.
+     */
+    QList<MissingMods> modsMissingDependencies(ModPlatform::ModLoaderTypes loaders, const QSet<Mod*>& turnedOff = {});
+    /** The disabled mods that provide the mod with this ID to one of these loaders, the one to turn on first */
+    QList<Mod*> disabledProviders(const QString& id, ModPlatform::ModLoaderTypes loaders);
+    /** The mod ID, saying what it is part of when it names a module of Fabric API, which mods nest a few of */
+    static QString describeModId(const QString& id);
+
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;
     void onParseFinished();
@@ -137,11 +153,18 @@ class ModFolderModel : public ResourceFolderModel {
 
    private:
     void updateDuplicates();
+    void updateMissingDependencies();
     /** The version of Minecraft the instance runs, or nothing without an instance */
     QString minecraftVersion() const;
+    /** The mod loaders the instance runs, or none without an instance */
+    ModPlatform::ModLoaderTypes modLoaders() const;
+    /** The IDs, each marked when a disabled mod provides it */
+    QString describeMissing(const QStringList& ids) const;
 
     QHash<QString, QSet<Mod*>> m_requiredBy;
     QHash<QString, QSet<Mod*>> m_requires;
     // internal ID -> file names of its duplicates
     QHash<QString, QStringList> m_duplicates;
+    // internal ID -> IDs of the mods it needs that no enabled mod provides
+    QHash<QString, QStringList> m_missingDependencies;
 };

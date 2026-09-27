@@ -45,6 +45,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QMimeData>
+#include <QRegularExpression>
 #include <QString>
 #include <QStyle>
 #include <QThreadPool>
@@ -99,10 +100,11 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
     const auto& requirement = at(row).details().minecraft;
     const auto minecraft = at(row).enabled() && requirement.isSet() ? minecraftVersion() : QString();
     const auto forOtherVersion = !minecraft.isEmpty() && !requirement.accepts(minecraft);
+    const auto missing = m_missingDependencies.value(at(row).internalId());
 
     switch (role) {
         case Qt::BackgroundRole:
-            if (!duplicates.isEmpty() || damaged || forOtherVersion) {
+            if (!duplicates.isEmpty() || damaged || forOtherVersion || !missing.isEmpty()) {
                 return QBrush(QColor(255, 0, 0, 40));
             }
             return rowBackground(row);
@@ -142,7 +144,7 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
             if (column == ImageColumn) {
                 return at(row).icon({ 32, 32 }, Qt::AspectRatioMode::KeepAspectRatioByExpanding);
             }
-            if (column == NameColumn && (!duplicates.isEmpty() || damaged || forOtherVersion)) {
+            if (column == NameColumn && (!duplicates.isEmpty() || damaged || forOtherVersion || !missing.isEmpty())) {
                 return QIcon::fromTheme("status-bad");
             }
             break;
@@ -184,6 +186,11 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
                                              "instance has %2. The mod loader will stop at it, so get the version of the mod made for "
                                              "%2, or disable it.")
                                               .arg(requirement.text(), minecraft);
+                    }
+                    if (!missing.isEmpty()) {
+                        tooltip += "\n" + tr("Needs other mods: it can't be loaded without %1, and the mod loader won't start the game "
+                                             "without them. Add them, or disable this mod.")
+                                              .arg(describeMissing(missing));
                     }
                     return tooltip;
                 }
@@ -383,6 +390,7 @@ void ModFolderModel::onParseFinished()
     }
 
     updateDuplicates();
+    updateMissingDependencies();
 }
 
 void ModFolderModel::onUpdateSucceeded()
@@ -390,6 +398,7 @@ void ModFolderModel::onUpdateSucceeded()
     ResourceFolderModel::onUpdateSucceeded();
     // a removed or renamed file may have been one of a pair
     updateDuplicates();
+    updateMissingDependencies();
 }
 
 QList<QStringList> ModFolderModel::duplicateGroups(ModPlatform::ModLoaderTypes loaders)
@@ -425,6 +434,28 @@ QStringList ModFolderModel::damagedMods()
     return damaged;
 }
 
+namespace {
+/// Whether the mod is a newer copy than the other: one with a later version, or with the same version, the file changed last
+bool isNewer(const Mod* a, const Mod* b)
+{
+    if (const auto order = Version(a->version()) <=> Version(b->version()); order != 0) {
+        return order > 0;
+    }
+    const auto aModified = a->fileinfo().lastModified();
+    const auto bModified = b->fileinfo().lastModified();
+    if (aModified != bModified) {
+        return aModified > bModified;
+    }
+    return a->fileinfo().fileName() < b->fileinfo().fileName();
+}
+
+/// Whether one of these loaders loads the mod while it is enabled, which they don't do with a mod only for servers
+bool isLoadedBy(const Mod& mod, ModPlatform::ModLoaderTypes loaders)
+{
+    return mod.details().loaders.testAnyFlags(loaders) && !mod.details().serverOnly;
+}
+}  // namespace
+
 QList<Mod*> ModFolderModel::otherGameVersionMods(const QString& minecraftVersion)
 {
     QList<Mod*> mods;
@@ -445,6 +476,125 @@ QString ModFolderModel::minecraftVersion() const
     return m_instance->getPackProfile()->getComponentVersion("net.minecraft");
 }
 
+ModPlatform::ModLoaderTypes ModFolderModel::modLoaders() const
+{
+    if (m_instance == nullptr) {
+        return {};
+    }
+    return m_instance->getPackProfile()->getModLoaders().value_or(ModPlatform::ModLoaderTypes());
+}
+
+QList<ModFolderModel::MissingMods> ModFolderModel::modsMissingDependencies(ModPlatform::ModLoaderTypes loaders, const QSet<Mod*>& turnedOff)
+{
+    loaders &= ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::Forge | ModPlatform::NeoForge;
+    // what the mods still being read provide isn't known yet
+    if (!loaders || hasPendingParseTasks()) {
+        return {};
+    }
+    // Fabric and Quilt can be told to change what a mod needs, and Quilt loads the mods in folders in the mods folder too
+    if (loaders.testAnyFlags(ModPlatform::Fabric | ModPlatform::Quilt) && m_instance != nullptr) {
+        const QDir config(FS::PathCombine(m_instance->gameRoot(), "config"));
+        if (config.exists("fabric_loader_dependencies.json") || config.exists("quilt-loader-overrides.json")) {
+            return {};
+        }
+    }
+    if (loaders.testFlag(ModPlatform::Quilt) &&
+        std::ranges::any_of(QDir(m_dir).entryList(QDir::Dirs | QDir::NoDotAndDotDot),
+                            [](const QString& folder) { return !folder.startsWith('.') && !folder.endsWith(".disabled"); })) {
+        return {};
+    }
+
+    // what the loaders provide themselves: MixinExtras comes with Fabric, Quilt and newer versions of Forge and NeoForge, and
+    // NeoForge for Minecraft 1.20.1 is still called forge
+    QSet<QString> provided = { "minecraft", "java", "mixinextras", "fabricloader", "quilt_loader", "forge", "neoforge" };
+    const auto isOn = [&turnedOff](Mod* mod) { return mod->enabled() && !turnedOff.contains(mod); };
+    for (auto* mod : allMods()) {
+        const auto& details = mod->details();
+        if (!isOn(mod)) {
+            continue;
+        }
+        // a mod whose file or metadata, or a mod nested in it, couldn't be read may be what provides anything
+        if (details.damaged || (details.loaders != ModPlatform::ModLoaderTypes() && details.mod_id.isEmpty()) || details.unreadNestedMods) {
+            return {};
+        }
+        if (isLoadedBy(*mod, loaders)) {
+            provided.unite(QSet<QString>(details.providedMods.begin(), details.providedMods.end()));
+        }
+    }
+
+    QList<MissingMods> missing;
+    for (auto* mod : allMods()) {
+        if (!isOn(mod) || !isLoadedBy(*mod, loaders)) {
+            continue;
+        }
+        QStringList ids;
+        for (const auto& id : mod->details().requiredMods) {
+            if (!provided.contains(id) && !ids.contains(id)) {
+                ids << id;
+            }
+        }
+        if (!ids.isEmpty()) {
+            missing.append({ .mod = mod, .ids = ids });
+        }
+    }
+    std::ranges::sort(
+        missing, [](const MissingMods& a, const MissingMods& b) { return a.mod->fileinfo().fileName() < b.mod->fileinfo().fileName(); });
+    return missing;
+}
+
+QList<Mod*> ModFolderModel::disabledProviders(const QString& id, ModPlatform::ModLoaderTypes loaders)
+{
+    QList<Mod*> providers;
+    for (auto* mod : allMods()) {
+        if (!mod->enabled() && isLoadedBy(*mod, loaders) && mod->details().providedMods.contains(id)) {
+            providers << mod;
+        }
+    }
+    std::ranges::sort(providers, isNewer);
+    return providers;
+}
+
+QString ModFolderModel::describeModId(const QString& id)
+{
+    // as fabric-api-base and fabric-screen-api-v1, where fabric-api itself is the whole of it
+    static const QRegularExpression s_fabricApiModule("^fabric-(api-base|.+-v\\d+)$");
+    return s_fabricApiModule.match(id).hasMatch() ? tr("%1 (part of Fabric API)").arg(id) : id;
+}
+
+QString ModFolderModel::describeMissing(const QStringList& ids) const
+{
+    const auto loaders = modLoaders();
+    QStringList described;
+    for (const auto& id : ids) {
+        bool turnedOff = false;
+        for (int row = 0; row < rowCount() && !turnedOff; row++) {
+            const auto& mod = at(row);
+            turnedOff = !mod.enabled() && isLoadedBy(mod, loaders) && mod.details().providedMods.contains(id);
+        }
+        described << (turnedOff ? tr("%1 (turned off)").arg(id) : describeModId(id));
+    }
+    return described.join(", ");
+}
+
+void ModFolderModel::updateMissingDependencies()
+{
+    // until every mod has been read, what they provide isn't known
+    if (hasPendingParseTasks()) {
+        return;
+    }
+    QHash<QString, QStringList> missing;
+    for (const auto& [mod, ids] : modsMissingDependencies(modLoaders())) {
+        missing.insert(mod->internalId(), ids);
+    }
+    if (missing == m_missingDependencies) {
+        return;
+    }
+    m_missingDependencies = missing;
+    if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount({}) - 1));
+    }
+}
+
 QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)
 {
     QHash<QString, Mod*> byFileName;
@@ -459,17 +609,7 @@ QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)
             copies << byFileName.value(fileName);
         }
         // the one to keep first
-        std::ranges::sort(copies, [](const Mod* a, const Mod* b) {
-            if (const auto order = Version(a->version()) <=> Version(b->version()); order != 0) {
-                return order > 0;
-            }
-            const auto aModified = a->fileinfo().lastModified();
-            const auto bModified = b->fileinfo().lastModified();
-            if (aModified != bModified) {
-                return aModified > bModified;
-            }
-            return a->fileinfo().fileName() < b->fileinfo().fileName();
-        });
+        std::ranges::sort(copies, isNewer);
         for (const auto* mod : copies.mid(1)) {
             older << mod->fileinfo().fileName();
         }
@@ -664,6 +804,7 @@ bool ModFolderModel::setResourceEnabled(const QModelIndexList& indexes, EnableAc
     auto disableStatus = ResourceFolderModel::setResourceEnabled(toList(toDisable), EnableAction::DISABLE);
     auto enableStatus = ResourceFolderModel::setResourceEnabled(toList(toEnable), EnableAction::ENABLE);
     updateDuplicates();
+    updateMissingDependencies();
     return disableStatus && enableStatus;
 }
 
@@ -698,6 +839,7 @@ bool ModFolderModel::setModsEnabled(const QModelIndexList& indexes, EnableAction
 {
     const bool ok = applyEnableAction(indexes, action);
     updateDuplicates();
+    updateMissingDependencies();
     return ok;
 }
 

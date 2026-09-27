@@ -16,6 +16,7 @@
  */
 
 #include <QDateTime>
+#include <QDir>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -33,6 +34,37 @@ class DuplicateModsTest : public QObject {
     {
         MMCZip::ArchiveWriter jar(path);
         return jar.open() && jar.addFile(metadataFile, metadata) && jar.close();
+    }
+
+    static bool writeJar(const QString& path, const QList<std::pair<QString, QByteArray>>& files)
+    {
+        MMCZip::ArchiveWriter jar(path);
+        if (!jar.open()) {
+            return false;
+        }
+        for (const auto& [name, contents] : files) {
+            if (!jar.addFile(name, contents)) {
+                return false;
+            }
+        }
+        return jar.close();
+    }
+
+    static QByteArray fabricMetadata(const QString& id, const QString& fields = {})
+    {
+        return QString(R"({"schemaVersion": 1, "id": "%1", "version": "1.0.0"%2})")
+            .arg(id, fields.isEmpty() ? QString() : ", " + fields)
+            .toUtf8();
+    }
+
+    /// Each enabled mod that needs mods that aren't there, with their IDs
+    static QStringList missingOf(ModFolderModel& model, ModPlatform::ModLoaderTypes loaders, const QSet<Mod*>& turnedOff = {})
+    {
+        QStringList lines;
+        for (const auto& [mod, ids] : model.modsMissingDependencies(loaders, turnedOff)) {
+            lines << mod->fileinfo().fileName() + ": " + ids.join(", ");
+        }
+        return lines;
     }
 
     static bool writeFabricMod(const QString& path, const QString& id, const QString& version = "1.0.0")
@@ -96,6 +128,21 @@ class DuplicateModsTest : public QObject {
         return file.resize(file.size() * 6 / 10);
     }
 
+    /// A jar holding only this Fabric metadata, to nest in another
+    static QByteArray jarOf(const QTemporaryDir& dir, const QByteArray& metadata)
+    {
+        const auto path = dir.filePath("nested.jar.tmp");
+        QFile::remove(path);
+        if (!writeJar(path, "fabric.mod.json", metadata)) {
+            return {};
+        }
+        QFile file(path);
+        const auto bytes = file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+        file.close();
+        QFile::remove(path);
+        return bytes;
+    }
+
     static QModelIndex indexOf(ModFolderModel& model, const QString& fileName)
     {
         for (int row = 0; row < model.rowCount(); row++) {
@@ -151,6 +198,101 @@ class DuplicateModsTest : public QObject {
 
         const auto& old = static_cast<const Mod&>(model.at(indexOf(model, "fabric-old.jar").row()));
         QCOMPARE(old.details().minecraft.text(), ">=1.20.1 <1.21");
+    }
+
+    void missingDependencies()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        const auto fabric = [&mods](const QString& fileName, const QString& id, const QString& fields) {
+            return writeJar(mods.filePath(fileName), "fabric.mod.json", fabricMetadata(id, fields));
+        };
+
+        // what the loader provides itself
+        QVERIFY(fabric("builtin.jar", "builtin",
+                       R"("depends": {"minecraft": "1.20.1", "fabricloader": ">=0.15", "java": ">=17", "mixinextras": "*"})"));
+        // a mod that isn't here, and one that is turned off
+        QVERIFY(fabric("iris.jar", "iris", R"("depends": {"sodium": "0.5.8", "fabric-api": "*"})"));
+        QVERIFY(fabric("sodium.jar.disabled", "sodium", ""));
+        // a mod provided under an older name, and one nested in the mod that needs it, as Mod Menu nests the parts of Fabric API it
+        // uses
+        QVERIFY(fabric("renamed.jar", "new-name", R"("provides": ["old-name"])"));
+        QVERIFY(fabric("uses-old-name.jar", "usesold", R"("depends": {"old-name": "*"})"));
+        QVERIFY(writeJar(mods.filePath("modmenu.jar"),
+                         { { "fabric.mod.json", fabricMetadata("modmenu", R"("depends": {"fabric-screen-api-v1": ">=1.0.4"},
+                                                                             "jars": [{"file": "META-INF/jars/screen.jar"}])") },
+                           { "META-INF/jars/screen.jar", jarOf(mods, fabricMetadata("fabric-screen-api-v1")) } }));
+        // a mod only for servers, which the loader leaves out, so it provides nothing and needs nothing
+        QVERIFY(fabric("server.jar", "serverlib", R"("environment": "server", "depends": {"nothing": "*"})"));
+        QVERIFY(fabric("needs-server.jar", "needsserver", R"("depends": {"serverlib": "*"})"));
+        // and a Forge mod, which Fabric doesn't read
+        QVERIFY(writeJar(mods.filePath("forge.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"forgemod\"\nversion=\"1\"\n"
+                         "[[dependencies.forgemod]]\nmodId=\"jei\"\nmandatory=true\n"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QCOMPARE(missingOf(model, ModPlatform::Fabric), (QStringList{ "iris.jar: fabric-api, sodium", "needs-server.jar: serverlib" }));
+        QCOMPARE(missingOf(model, ModPlatform::Forge), QStringList{ "forge.jar: jei" });
+        const auto providers = model.disabledProviders("sodium", ModPlatform::Fabric);
+        QCOMPARE(providers.size(), 1);
+        QCOMPARE(providers.first()->fileinfo().fileName(), "sodium.jar.disabled");
+        QVERIFY(model.disabledProviders("fabric-api", ModPlatform::Fabric).isEmpty());
+
+        // Quilt loads the mods in folders in the mods folder too, which aren't read, so it can't be told what is missing
+        QVERIFY(QDir(mods.path()).mkdir(".index"));
+        QVERIFY(QDir(mods.path()).mkdir("old.disabled"));
+        QCOMPARE(missingOf(model, ModPlatform::Quilt).size(), 2);
+        QVERIFY(QDir(mods.path()).mkdir("more"));
+        QVERIFY(missingOf(model, ModPlatform::Quilt).isEmpty());
+        QCOMPARE(missingOf(model, ModPlatform::Fabric).size(), 2);
+    }
+
+    void missingDependenciesInTurn()
+    {
+        // turning off a mod that needs a mod that isn't there leaves out what needs that mod in turn
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        QVERIFY(writeJar(mods.filePath("create.jar"), "fabric.mod.json", fabricMetadata("create", R"("depends": {"flywheel": "*"})")));
+        QVERIFY(writeJar(mods.filePath("addon.jar"), "fabric.mod.json", fabricMetadata("addon", R"("depends": {"create": "*"})")));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QCOMPARE(missingOf(model, ModPlatform::Fabric), QStringList{ "create.jar: flywheel" });
+        const QSet<Mod*> create{ &model.at(indexOf(model, "create.jar").row()) };
+        QCOMPARE(missingOf(model, ModPlatform::Fabric, create), QStringList{ "addon.jar: create" });
+    }
+
+    void missingDependenciesUnknown_data()
+    {
+        QTest::addColumn<QString>("fileName");
+        QTest::addColumn<QByteArray>("metadata");
+
+        QTest::newRow("metadata that can't be read") << "broken.jar" << QByteArray(R"({"schemaVersion": 1, "id": )");
+        QTest::newRow("a nested mod that isn't there")
+            << "nesting.jar" << fabricMetadata("nesting", R"("jars": [{"file": "META-INF/jars/gone.jar"}])");
+    }
+
+    void missingDependenciesUnknown()
+    {
+        // a mod that couldn't be read may be the one that provides what another needs
+        QFETCH(const QString, fileName);
+        QFETCH(const QByteArray, metadata);
+
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        QVERIFY(writeJar(mods.filePath("iris.jar"), "fabric.mod.json", fabricMetadata("iris", R"("depends": {"sodium": "*"})")));
+        QVERIFY(writeJar(mods.filePath(fileName), "fabric.mod.json", metadata));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+        QVERIFY(missingOf(model, ModPlatform::Fabric).isEmpty());
+
+        // unless it is turned off
+        QVERIFY(model.setModsEnabled({ indexOf(model, fileName) }, EnableAction::DISABLE));
+        QCOMPARE(missingOf(model, ModPlatform::Fabric), QStringList{ "iris.jar: sodium" });
     }
 
     void damaged()

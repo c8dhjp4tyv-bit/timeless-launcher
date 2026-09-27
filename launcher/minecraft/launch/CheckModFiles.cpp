@@ -18,6 +18,7 @@
 #include "CheckModFiles.h"
 
 #include <QPushButton>
+#include <QRegularExpression>
 
 #include "launch/LaunchTask.h"
 #include "minecraft/MinecraftInstance.h"
@@ -63,36 +64,45 @@ void CheckModFiles::check()
     const auto loaders = m_parent->instance()->getPackProfile()->getModLoaders().value_or(ModPlatform::ModLoaderTypes()) &
                          (ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::Forge | ModPlatform::NeoForge);
     auto* mods = m_parent->instance()->loaderModList();
-    if (!loaders || (checkDamaged(mods) && checkGameVersion(mods) && checkDuplicates(mods, loaders))) {
+    if (!loaders || (checkDamaged(mods) && checkGameVersion(mods) && checkDuplicates(mods, loaders) && checkDependencies(mods, loaders))) {
         emitSucceeded();
     }
 }
 
-bool CheckModFiles::ask(ModFolderModel* mods, const Question& question)
+CheckModFiles::Answer CheckModFiles::ask(ModFolderModel* mods, const Question& question)
 {
     auto* dialog = CustomMessageBox::selectable(nullptr, question.title, question.text, QMessageBox::Icon::Warning,
                                                 QMessageBox::StandardButton::Cancel, QMessageBox::StandardButton::NoButton);
-    auto* turnOff = dialog->addButton(question.turnOff, QMessageBox::AcceptRole);
+    auto* button = dialog->addButton(question.button, QMessageBox::AcceptRole);
     auto* launchAnyway = dialog->addButton(tr("Launch Anyway"), QMessageBox::ActionRole);
-    dialog->setDefaultButton(turnOff);
+    dialog->setDefaultButton(button);
     dialog->setEscapeButton(QMessageBox::StandardButton::Cancel);
     dialog->exec();
     auto* choice = dialog->clickedButton();
     dialog->deleteLater();
 
-    if (choice == turnOff) {
-        if (!mods->setModsEnabled(indexesOf(mods, question.fileNames), EnableAction::DISABLE)) {
-            emit logLine(question.couldNotTurnOff, MessageLevel::Fatal);
-            emitFailed(question.couldNotTurnOff);
-            return false;
-        }
-        emit logLine(question.turnedOff + "\n  " + question.fileNames.join("\n  "), MessageLevel::Launcher);
-    } else if (choice != launchAnyway) {
+    if (choice == launchAnyway) {
+        return Answer::LaunchAnyway;
+    }
+    if (choice != button) {
         emit logLine(question.canceled, MessageLevel::Fatal);
         emitFailed(question.canceled);
-        return false;
+        return Answer::Stop;
     }
-    return true;
+    if (!mods->setModsEnabled(indexesOf(mods, question.fileNames), question.action)) {
+        emit logLine(question.failed, MessageLevel::Fatal);
+        emitFailed(question.failed);
+        return Answer::Stop;
+    }
+    // named as they are now
+    auto fileNames = question.fileNames;
+    if (question.action == EnableAction::ENABLE) {
+        for (auto& fileName : fileNames) {
+            fileName.remove(QRegularExpression("\\.disabled$"));
+        }
+    }
+    emit logLine(question.done + "\n  " + fileNames.join("\n  "), MessageLevel::Launcher);
+    return Answer::Done;
 }
 
 bool CheckModFiles::checkDamaged(ModFolderModel* mods)
@@ -114,12 +124,12 @@ bool CheckModFiles::checkDamaged(ModFolderModel* mods)
                                     "Turn Them Off takes them out of the game (the Mods page can turn them back on). Download them "
                                     "again to use them.")
                                      .arg(damaged.join("\n")),
-                         .turnOff = tr("Turn Them Off"),
+                         .button = tr("Turn Them Off"),
                          .fileNames = damaged,
-                         .turnedOff = tr("Turned off the damaged mod files:"),
-                         .couldNotTurnOff = tr("Couldn't turn off the damaged mod files"),
+                         .done = tr("Turned off the damaged mod files:"),
+                         .failed = tr("Couldn't turn off the damaged mod files"),
                          .canceled = tr("Some mod files are damaged"),
-                     });
+                     }) != Answer::Stop;
 }
 
 bool CheckModFiles::checkGameVersion(ModFolderModel* mods)
@@ -149,12 +159,12 @@ bool CheckModFiles::checkGameVersion(ModFolderModel* mods)
                                     "Turn Them Off takes them out of the game (the Mods page can turn them back on). Get the versions "
                                     "of them made for Minecraft %1 to use them.")
                                      .arg(minecraft, lines.join("\n")),
-                         .turnOff = tr("Turn Them Off"),
+                         .button = tr("Turn Them Off"),
                          .fileNames = fileNames,
-                         .turnedOff = tr("Turned off the mods made for another version of Minecraft:"),
-                         .couldNotTurnOff = tr("Couldn't turn off the mods made for another version of Minecraft"),
+                         .done = tr("Turned off the mods made for another version of Minecraft:"),
+                         .failed = tr("Couldn't turn off the mods made for another version of Minecraft"),
                          .canceled = tr("Some mods are made for another version of Minecraft"),
-                     });
+                     }) != Answer::Stop;
 }
 
 bool CheckModFiles::checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders)
@@ -182,10 +192,124 @@ bool CheckModFiles::checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoader
                                     "turn them back on):\n\n"
                                     "%2")
                                      .arg(lines.join("\n"), older.join("\n")),
-                         .turnOff = tr("Turn Off Older Copies"),
+                         .button = tr("Turn Off Older Copies"),
                          .fileNames = older,
-                         .turnedOff = tr("Turned off the older copies:"),
-                         .couldNotTurnOff = tr("Couldn't turn off the older copies of the mods"),
+                         .done = tr("Turned off the older copies:"),
+                         .failed = tr("Couldn't turn off the older copies of the mods"),
                          .canceled = tr("Some mods are enabled more than once"),
-                     });
+                     }) != Answer::Stop;
+}
+
+bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders)
+{
+    auto missing = mods->modsMissingDependencies(loaders);
+    if (missing.isEmpty()) {
+        return true;
+    }
+
+    // a mod another needs may only be turned off, and can be turned back on, unless the loader would stop at it: at one that is
+    // damaged or made for another version of Minecraft, or at a second copy of an enabled mod, as when an older version of it is
+    // the one enabled
+    const auto minecraft = m_parent->instance()->getPackProfile()->getComponentVersion("net.minecraft");
+    QSet<QString> enabledIds;
+    for (const auto* mod : mods->allMods()) {
+        if (mod->enabled() && mod->details().loaders.testAnyFlags(loaders)) {
+            enabledIds << mod->mod_id();
+        }
+    }
+    QStringList turnOn;
+    QStringList lines;
+    for (const auto& [mod, ids] : missing) {
+        for (const auto& id : ids) {
+            for (const auto* provider : mods->disabledProviders(id, loaders)) {
+                const auto fileName = provider->fileinfo().fileName();
+                const auto& details = provider->details();
+                if (details.damaged || !details.minecraft.accepts(minecraft) ||
+                    (enabledIds.contains(provider->mod_id()) && !turnOn.contains(fileName))) {
+                    continue;
+                }
+                lines << tr("%1 needs %2, which %3 provides").arg(mod->fileinfo().fileName(), id, fileName);
+                if (!turnOn.contains(fileName)) {
+                    turnOn << fileName;
+                    enabledIds << provider->mod_id();
+                }
+                break;
+            }
+        }
+    }
+    if (!turnOn.isEmpty()) {
+        emit logLine(tr("These mods need mods that are turned off, and the mod loader won't start the game without them:\n  %1")
+                         .arg(lines.join("\n  ")),
+                     MessageLevel::Warning);
+        const auto answer = ask(mods, {
+                                          .title = tr("Mods that are turned off"),
+                                          .text = tr("Some mods need mods that are turned off, and the game won't start without "
+                                                     "them:\n\n"
+                                                     "%1\n\n"
+                                                     "Turn Them On turns these on:\n\n"
+                                                     "%2")
+                                                      .arg(lines.join("\n"), turnOn.join("\n")),
+                                          .button = tr("Turn Them On"),
+                                          .fileNames = turnOn,
+                                          .action = EnableAction::ENABLE,
+                                          .done = tr("Turned on the mods others need:"),
+                                          .failed = tr("Couldn't turn on the mods others need"),
+                                          .canceled = tr("Some mods need mods that are turned off"),
+                                      });
+        if (answer != Answer::Done) {
+            return answer == Answer::LaunchAnyway;
+        }
+        missing = mods->modsMissingDependencies(loaders);
+        if (missing.isEmpty()) {
+            return true;
+        }
+    }
+
+    // turning a mod off leaves out whatever needs it too, and so on
+    QSet<Mod*> turnOff;
+    for (auto found = missing; !found.isEmpty(); found = mods->modsMissingDependencies(loaders, turnOff)) {
+        for (const auto& [mod, ids] : found) {
+            turnOff << mod;
+        }
+    }
+    lines.clear();
+    for (const auto& [mod, ids] : missing) {
+        QStringList described;
+        for (const auto& id : ids) {
+            described << ModFolderModel::describeModId(id);
+        }
+        lines << tr("%1 needs %2").arg(mod->fileinfo().fileName(), described.join(", "));
+    }
+    QStringList fileNames;
+    QStringList others;
+    for (const auto* mod : turnOff) {
+        fileNames << mod->fileinfo().fileName();
+    }
+    fileNames.sort();
+    for (const auto& fileName : fileNames) {
+        if (!std::ranges::any_of(missing, [&fileName](const auto& found) { return found.mod->fileinfo().fileName() == fileName; })) {
+            others << fileName;
+        }
+    }
+
+    emit logLine(
+        tr("These mods need mods that aren't here, and the mod loader won't start the game without them:\n  %1").arg(lines.join("\n  ")),
+        MessageLevel::Warning);
+    auto text = tr("Some mods need mods that aren't here, and the game won't start without them:\n\n"
+                   "%1\n\n"
+                   "Turn Them Off takes these mods out of the game (the Mods page can turn them back on). Add the mods they need to "
+                   "use them.")
+                    .arg(lines.join("\n"));
+    if (!others.isEmpty()) {
+        text += "\n\n" + tr("It turns these off too, as they need those in turn:\n\n%1").arg(others.join("\n"));
+    }
+    return ask(mods, {
+                         .title = tr("Missing mods"),
+                         .text = text,
+                         .button = tr("Turn Them Off"),
+                         .fileNames = fileNames,
+                         .done = tr("Turned off the mods that need mods that aren't here:"),
+                         .failed = tr("Couldn't turn off the mods that need mods that aren't here"),
+                         .canceled = tr("Some mods need mods that aren't here"),
+                     }) != Answer::Stop;
 }

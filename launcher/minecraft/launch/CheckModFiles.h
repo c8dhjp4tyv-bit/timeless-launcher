@@ -18,13 +18,14 @@
 #pragma once
 
 #include "launch/LaunchStep.h"
+#include "minecraft/mod/Resource.h"
 #include "modplatform/ModIndex.h"
 
 class ModFolderModel;
 
-/// Mod loaders stop at a mod file Java can't open and at a mod made for another version of Minecraft, and refuse to start with
-/// two copies of a mod, so rather than let the game fail after loading for a while, this names such files and offers to turn
-/// them off
+/// Mod loaders stop at a mod file Java can't open, at a mod made for another version of Minecraft and at one that needs a mod
+/// that isn't there, and refuse to start with two copies of a mod, so rather than let the game fail after loading for a while,
+/// this names such files and offers to turn them off, or to turn on the mods others need
 class CheckModFiles : public LaunchStep {
     Q_OBJECT
 
@@ -40,22 +41,26 @@ class CheckModFiles : public LaunchStep {
     struct Question {
         QString title;
         QString text;
-        /// The button that turns the mods off, which is the default
-        QString turnOff;
+        /// The button that turns the files off, or on, which is the default
+        QString button;
         QStringList fileNames;
-        /// Logged, followed by the file names, once they are off
-        QString turnedOff;
-        /// What the launch fails with when turning them off does, and when the question is canceled
-        QString couldNotTurnOff;
+        EnableAction action = EnableAction::DISABLE;
+        /// Logged, followed by the file names, once they are off, or on
+        QString done;
+        /// What the launch fails with when turning them off or on does, and when the question is canceled
+        QString failed;
         QString canceled;
     };
+    /// What the user answered
+    enum class Answer : std::uint8_t { Done, LaunchAnyway, Stop };
 
     void check();
     /// Each of these says what it found and asks what to do, and returns whether the launch goes on; it has failed if not
     bool checkDamaged(ModFolderModel* mods);
     bool checkGameVersion(ModFolderModel* mods);
     bool checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders);
-    bool ask(ModFolderModel* mods, const Question& question);
+    bool checkDependencies(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders);
+    Answer ask(ModFolderModel* mods, const Question& question);
 
     QMetaObject::Connection m_waitForParsing;
 };

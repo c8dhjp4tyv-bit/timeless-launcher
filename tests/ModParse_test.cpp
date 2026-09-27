@@ -40,6 +40,49 @@ class ModParseTest : public QObject {
         return QString(R"({"schemaVersion": 1, "id": "example", "version": "1.0.0", %1})").arg(fields).toUtf8();
     }
 
+    static QByteArray fabricMod(const QString& id, const QString& fields)
+    {
+        return QString(R"({"schemaVersion": 1, "id": "%1", "version": "1.0.0"%2})")
+            .arg(id, fields.isEmpty() ? QString() : ", " + fields)
+            .toUtf8();
+    }
+
+    static bool writeJar(const QString& path, const QList<std::pair<QString, QByteArray>>& files)
+    {
+        MMCZip::ArchiveWriter jar(path);
+        if (!jar.open()) {
+            return false;
+        }
+        for (const auto& [name, contents] : files) {
+            if (!jar.addFile(name, contents)) {
+                return false;
+            }
+        }
+        return jar.close();
+    }
+
+    /// A jar holding these files, to nest in another
+    static QByteArray jarBytes(const QTemporaryDir& dir, const QList<std::pair<QString, QByteArray>>& files)
+    {
+        const auto path = dir.filePath("nested.jar");
+        QFile::remove(path);
+        if (!writeJar(path, files)) {
+            return {};
+        }
+        QFile file(path);
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    }
+
+    /// Bytes that don't compress, for a cut to fall into
+    static QByteArray noise()
+    {
+        QByteArray data;
+        for (int i = 0; i < 20000; i++) {
+            data.append(static_cast<char>((i * 7919 + i / 13) % 256));
+        }
+        return data;
+    }
+
     /// A mod's jar as a download brings it, with more after its metadata for a cut to fall into
     static QByteArray wholeJar()
     {
@@ -180,6 +223,176 @@ class ModParseTest : public QObject {
         QCOMPARE(mod.details().minecraft.text(), expected);
     }
 
+    void fabricNeedsAndProvides()
+    {
+        // what the loader holds the mod to, and what it gives the loader besides itself, as Sodium lists them
+        const auto details = ModUtils::ReadFabricModInfo(fabricMod(R"(
+            "environment": "client", "provides": ["example-old"],
+            "depends": {"minecraft": "1.20.1", "fabricloader": ">=0.12.0", "fabric-rendering-fluids-v1": ">=0.1"},
+            "recommends": {"modmenu": "*"},
+            "jars": [{"file": "META-INF/jars/fabric-api-base.jar"}, {"file": "META-INF/jars/fabric-rendering-fluids-v1.jar"}])"));
+        QCOMPARE(details.requiredMods, (QStringList{ "fabric-rendering-fluids-v1", "fabricloader", "minecraft" }));
+        QCOMPARE(details.providedMods, (QStringList{ "example", "example-old" }));
+        QCOMPARE(details.nestedJars, (QStringList{ "META-INF/jars/fabric-api-base.jar", "META-INF/jars/fabric-rendering-fluids-v1.jar" }));
+        QVERIFY(!details.serverOnly);
+
+        QVERIFY(ModUtils::ReadFabricModInfo(fabricMod(R"("environment": "server")")).serverOnly);
+        // metadata that can't be read provides nothing, not a mod without an ID
+        QVERIFY(ModUtils::ReadFabricModInfo("{\"schemaVersion\": 1, \"id\": \"example\"").providedMods.isEmpty());
+    }
+
+    void quiltNeedsAndProvides()
+    {
+        const auto details = ModUtils::ReadQuiltModInfo(
+            QByteArray(R"({"schema_version": 1, "minecraft": {"environment": "*"}, "quilt_loader": {"id": "example", "version": "1",
+                           "provides": ["old_example", {"id": "com.example:older_example", "version": "1"}],
+                           "jars": ["META-INF/jars/library.jar"],
+                           "depends": ["quilt_loader", {"id": "org.quiltmc:qsl", "versions": ">=6"}, {"id": "modmenu", "optional": true},
+                                       {"id": "sodium", "unless": "embeddium"}, [{"id": "a"}, {"id": "b"}]]}})"));
+        // one needed unless another mod is there, and one of several, may not be needed at all
+        QCOMPARE(details.requiredMods, (QStringList{ "quilt_loader", "qsl" }));
+        QCOMPARE(details.providedMods, (QStringList{ "example", "old_example", "older_example" }));
+        QCOMPARE(details.nestedJars, QStringList{ "META-INF/jars/library.jar" });
+        QVERIFY(!details.serverOnly);
+
+        QVERIFY(
+            ModUtils::ReadQuiltModInfo(
+                R"({"schema_version": 1, "minecraft": {"environment": "dedicated_server"}, "quilt_loader": {"id": "a", "version": "1"}})")
+                .serverOnly);
+    }
+
+    void forgeNeedsAndProvides_data()
+    {
+        QTest::addColumn<QString>("metadataFile");
+        QTest::addColumn<QString>("dependency");
+        QTest::addColumn<QStringList>("required");
+
+        QTest::newRow("Forge, mandatory") << "META-INF/mods.toml" << "mandatory=true" << QStringList{ "forge", "jei" };
+        QTest::newRow("Forge, not mandatory") << "META-INF/mods.toml" << "mandatory=false" << QStringList{ "forge" };
+        QTest::newRow("NeoForge, required") << "META-INF/neoforge.mods.toml" << "type=\"required\"" << QStringList{ "forge", "jei" };
+        QTest::newRow("NeoForge, optional") << "META-INF/neoforge.mods.toml" << "type=\"optional\"" << QStringList{ "forge" };
+        // a server needs it, and the client doesn't
+        QTest::newRow("only on servers") << "META-INF/mods.toml" << "mandatory=true\nside=\"SERVER\"" << QStringList{ "forge" };
+    }
+
+    void forgeNeedsAndProvides()
+    {
+        QFETCH(const QString, metadataFile);
+        QFETCH(const QString, dependency);
+        QFETCH(const QStringList, required);
+
+        // two mods in one file, each with its own dependencies
+        const auto modsToml = QString(
+                                  "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n"
+                                  "[[mods]]\nmodId=\"example\"\nversion=\"1\"\n"
+                                  "[[mods]]\nmodId=\"example_addon\"\nversion=\"1\"\n"
+                                  "[[dependencies.example]]\nmodId=\"forge\"\nmandatory=true\ntype=\"required\"\nversionRange=\"[47,)\"\n"
+                                  "[[dependencies.example_addon]]\nmodId=\"jei\"\n%1\nversionRange=\"[15,)\"\n")
+                                  .arg(dependency)
+                                  .toUtf8();
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("mod.jar");
+        QVERIFY(writeJar(path, { { metadataFile, modsToml } }));
+
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.details().providedMods, (QStringList{ "example", "example_addon" }));
+        QCOMPARE(mod.details().requiredMods, required);
+    }
+
+    void nestedMods()
+    {
+        // Fabric loads the jars a mod's metadata lists as mods of their own, and those can nest more, as Fabric API's modules
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto inner = jarBytes(dir, { { "fabric.mod.json", fabricMod("inner", R"("provides": ["inner-old"])") } });
+        const auto middle = jarBytes(dir, { { "fabric.mod.json", fabricMod("middle", R"("jars": [{"file": "META-INF/jars/inner.jar"}])") },
+                                            { "META-INF/jars/inner.jar", inner } });
+        // a library Loom gave metadata of its own, and one only for servers, which the loader leaves out
+        const auto library = jarBytes(dir, { { "fabric.mod.json", fabricMod("org_example_library", "") } });
+        const auto server = jarBytes(dir, { { "fabric.mod.json", fabricMod("serverside", R"("environment": "server")") } });
+        const auto path = dir.filePath("mod.jar");
+        QVERIFY(writeJar(path, { { "fabric.mod.json", fabricMod("example", R"("jars": [{"file": "META-INF/jars/middle.jar"},
+                                                                                       {"file": "META-INF/jars/library.jar"},
+                                                                                       {"file": "META-INF/jars/server.jar"}])") },
+                                 { "META-INF/jars/middle.jar", middle },
+                                 { "META-INF/jars/library.jar", library },
+                                 { "META-INF/jars/server.jar", server },
+                                 { "META-INF/jars/unlisted.jar", library } }));
+
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.details().providedMods, (QStringList{ "example", "middle", "inner", "inner-old", "org_example_library" }));
+        QVERIFY(!mod.details().unreadNestedMods);
+
+        // what the basic information of a mod needs doesn't include what is nested in it
+        Mod basic{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(basic, ModUtils::ProcessingLevel::BasicInfoOnly));
+        QCOMPARE(basic.details().providedMods, QStringList{ "example" });
+    }
+
+    void nestedModsThatCantBeRead_data()
+    {
+        QTest::addColumn<QString>("nestedJar");
+
+        QTest::newRow("listed and not there") << "absent";
+        QTest::newRow("with metadata that can't be read") << "unreadable";
+        QTest::newRow("in a file cut short") << "cut";
+    }
+
+    void nestedModsThatCantBeRead()
+    {
+        // whatever they would provide isn't known then
+        QFETCH(const QString, nestedJar);
+
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QList<std::pair<QString, QByteArray>> files{ { "fabric.mod.json",
+                                                       fabricMod("example", R"("jars": [{"file": "META-INF/jars/nested.jar"}])") } };
+        if (nestedJar == "unreadable") {
+            files.append({ "META-INF/jars/nested.jar", jarBytes(dir, { { "fabric.mod.json", "{\"id\": " } }) });
+        } else if (nestedJar == "cut") {
+            files.append(
+                { "META-INF/jars/nested.jar", jarBytes(dir, { { "fabric.mod.json", fabricMod("nested", "") }, { "data.bin", noise() } }) });
+        }
+        const auto path = dir.filePath("mod.jar");
+        QVERIFY(writeJar(path, files));
+        if (nestedJar == "cut") {
+            // as a download cut short in the nested jar, after the mod's own metadata
+            QFile file(path);
+            QVERIFY(file.resize(file.size() * 6 / 10));
+        }
+
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.mod_id(), "example");
+        QVERIFY(mod.details().unreadNestedMods);
+    }
+
+    void jarJar()
+    {
+        // Forge and NeoForge load the jars in META-INF/jarjar, mods and libraries alike
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto nestedMod = jarBytes(
+            dir, { { "META-INF/neoforge.mods.toml",
+                     "modLoader=\"javafml\"\nloaderVersion=\"[4,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"flywheel\"\nversion=\"1\"\n" } });
+        const auto library = jarBytes(dir, { { "org/example/Library.class", "\xCA\xFE\xBA\xBE" } });
+        const auto path = dir.filePath("mod.jar");
+        QVERIFY(writeJar(
+            path, { { "META-INF/neoforge.mods.toml",
+                      "modLoader=\"javafml\"\nloaderVersion=\"[4,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"create\"\nversion=\"6\"\n" },
+                    { "META-INF/jarjar/metadata.json", R"({"jars": []})" },
+                    { "META-INF/jarjar/flywheel.jar", nestedMod },
+                    { "META-INF/jarjar/library.jar", library } }));
+
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.details().providedMods, (QStringList{ "create", "flywheel" }));
+        QVERIFY(!mod.details().unreadNestedMods);
+    }
+
     void missingZipEnd_data()
     {
         QTest::addColumn<QByteArray>("contents");
@@ -248,6 +461,21 @@ class ModParseTest : public QObject {
         QVERIFY(ModUtils::process(mod));
         QCOMPARE(mod.mod_id(), "example");
         QCOMPARE(mod.name(), "Example Mod");
+    }
+
+    void versionFromTheManifest()
+    {
+        // a Forge mod can take its version from the jar's manifest, whose lines may end in \r\n
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("mod.jar");
+        QVERIFY(writeJar(path, { { "META-INF/MANIFEST.MF", "Manifest-Version: 1.0\r\nimplementation-version: 1.2.3 \r\nBuilt-By: x\r\n" },
+                                 { "META-INF/mods.toml",
+                                   "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\n"
+                                   "modId=\"example\"\nversion=\"${file.jarVersion}\"\n" } }));
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.version(), "1.2.3");
     }
 
     void missingZipEndOfAFileThatIsGone()
