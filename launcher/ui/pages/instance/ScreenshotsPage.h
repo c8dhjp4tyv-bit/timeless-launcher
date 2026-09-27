@@ -36,6 +36,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QModelIndex>
 
 #include "ui/pages/BasePage.h"
 
@@ -87,6 +88,9 @@ class ScreenshotsPage : public QMainWindow, public BasePage {
     void showContextMenu(const QPoint& pos);
 
    private:
+    /// The selected screenshots, one index each
+    QModelIndexList selectedScreenshots() const;
+
     Ui::ScreenshotsPage* ui;
     std::shared_ptr<ScreenshotsFSModel> m_model;
     std::shared_ptr<QIdentityProxyModel> m_filterModel;
