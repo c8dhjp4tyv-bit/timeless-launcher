@@ -15,6 +15,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <QCoreApplication>
 #include <QEventLoop>
 #include <QRegularExpression>
 #include <QTemporaryDir>
@@ -236,6 +237,39 @@ class WorldTest : public QObject {
         QCOMPARE(nameOf(FS::PathCombine(ours, "MyWorld")), "My World");
 
         QThreadPool::globalInstance()->waitForDone();
+    }
+
+    void detailsLoadInTheBackground()
+    {
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto saves = temp.filePath("saves");
+        const auto level = levelDat("My World");
+        FS::write(FS::PathCombine(saves, "MyWorld", "level.dat"), level);
+        FS::write(FS::PathCombine(saves, "MyWorld", "region", "r.0.0.mca"), "region");
+
+        WorldList worlds(saves, nullptr);
+        QVERIFY(worlds.update());
+        // the size is worked out on another thread, and filled in once it's done
+        QTRY_COMPARE(worlds.allWorlds().first().bytes(), level.size() + 6);
+        QThreadPool::globalInstance()->waitForDone();
+    }
+
+    void listGoneBeforeItsWorldsAreRead()
+    {
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto saves = temp.filePath("saves");
+        for (int i = 0; i < 20; i++) {
+            FS::write(FS::PathCombine(saves, QString("World%1").arg(i), "level.dat"), levelDat(QString("World %1").arg(i)));
+        }
+        {
+            WorldList worlds(saves, nullptr);
+            QVERIFY(worlds.update());
+        }
+        // what the threads found out for the list goes nowhere
+        QThreadPool::globalInstance()->waitForDone();
+        QCoreApplication::processEvents();
     }
 
     void backupWhenChanged()
