@@ -39,6 +39,7 @@
 #include <QStringList>
 #include <QUrl>
 
+#include "minecraft/mod/GameVersionRequirement.h"
 #include "modplatform/ModIndex.h"
 
 struct ModLicense {
@@ -148,6 +149,9 @@ struct ModDetails {
     /* Whether Java can't open the file as a jar, as when its download was cut short or a web page was saved in its place */
     bool damaged = false;
 
+    /* The versions of Minecraft the mod's own metadata says it works with, which its mod loader holds it to */
+    GameVersionRequirement minecraft;
+
     ModDetails() = default;
 
     /** Metadata should be handled manually to properly set the mod status. */
@@ -165,6 +169,7 @@ struct ModDetails {
         , dependencies(other.dependencies)
         , loaders(other.loaders)
         , damaged(other.damaged)
+        , minecraft(other.minecraft)
     {}
 
     ModDetails& operator=(const ModDetails& other) = default;

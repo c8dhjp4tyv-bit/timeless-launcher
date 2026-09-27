@@ -37,6 +37,23 @@ QString largestIcon(const QJsonObject& icons)
     }
     return bestIcon;
 }
+
+/// A string, or an array of strings, as Fabric and Quilt give versions; anything else, or an array holding more than strings,
+/// gives nothing
+QStringList stringsOf(const QJsonValue& value)
+{
+    if (value.isString()) {
+        return { value.toString() };
+    }
+    QStringList strings;
+    for (const auto& item : value.toArray()) {
+        if (!item.isString()) {
+            return {};
+        }
+        strings << item.toString();
+    }
+    return strings;
+}
 }  // namespace
 
 namespace ModUtils {
@@ -269,6 +286,12 @@ ModDetails ReadMCModTOML(QByteArray contents)
                 continue;
             }
             auto modId = (*dep_table)["modId"].as_string();
+            // the versions of Minecraft the mod works with, which the loader holds it to when the dependency is required
+            if (modId && modId->get() == "minecraft" && (isNeoForgeDep(dep_table) || isForgeDep(dep_table))) {
+                if (auto* range = (*dep_table)["versionRange"].as_string()) {
+                    details.minecraft = GameVersionRequirement::fromMaven(QString::fromStdString(range->get()));
+                }
+            }
             if (!modId || ignoreModIds.contains(QString::fromStdString(modId->get()))) {
                 continue;
             }
@@ -374,6 +397,8 @@ ModDetails ReadFabricModInfo(QByteArray contents)
                         details.dependencies.append(key);
                     }
                 }
+                // the versions of Minecraft the mod works with: a predicate, or a list of them any one of which will do
+                details.minecraft = GameVersionRequirement::fromFabric(stringsOf(obj.value("minecraft")));
             }
         }
     }
@@ -458,6 +483,11 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
                         continue;
                     }
                     modId = dependencyObject.value("id").toString();
+                    // the versions of Minecraft the mod works with, unless it only needs them in some case; versions given as an
+                    // object of any and all aren't read, and hold the mod to nothing
+                    if (modId == "minecraft" && !dependencyObject.contains("unless")) {
+                        details.minecraft = GameVersionRequirement::fromFabric(stringsOf(dependencyObject.value("versions")));
+                    }
                 } else {
                     // an array is satisfied by any one of its entries, so none of them is required on its own
                     continue;

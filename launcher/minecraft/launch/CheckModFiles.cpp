@@ -63,9 +63,36 @@ void CheckModFiles::check()
     const auto loaders = m_parent->instance()->getPackProfile()->getModLoaders().value_or(ModPlatform::ModLoaderTypes()) &
                          (ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::Forge | ModPlatform::NeoForge);
     auto* mods = m_parent->instance()->loaderModList();
-    if (!loaders || (checkDamaged(mods) && checkDuplicates(mods, loaders))) {
+    if (!loaders || (checkDamaged(mods) && checkGameVersion(mods) && checkDuplicates(mods, loaders))) {
         emitSucceeded();
     }
+}
+
+bool CheckModFiles::ask(ModFolderModel* mods, const Question& question)
+{
+    auto* dialog = CustomMessageBox::selectable(nullptr, question.title, question.text, QMessageBox::Icon::Warning,
+                                                QMessageBox::StandardButton::Cancel, QMessageBox::StandardButton::NoButton);
+    auto* turnOff = dialog->addButton(question.turnOff, QMessageBox::AcceptRole);
+    auto* launchAnyway = dialog->addButton(tr("Launch Anyway"), QMessageBox::ActionRole);
+    dialog->setDefaultButton(turnOff);
+    dialog->setEscapeButton(QMessageBox::StandardButton::Cancel);
+    dialog->exec();
+    auto* choice = dialog->clickedButton();
+    dialog->deleteLater();
+
+    if (choice == turnOff) {
+        if (!mods->setModsEnabled(indexesOf(mods, question.fileNames), EnableAction::DISABLE)) {
+            emit logLine(question.couldNotTurnOff, MessageLevel::Fatal);
+            emitFailed(question.couldNotTurnOff);
+            return false;
+        }
+        emit logLine(question.turnedOff + "\n  " + question.fileNames.join("\n  "), MessageLevel::Launcher);
+    } else if (choice != launchAnyway) {
+        emit logLine(question.canceled, MessageLevel::Fatal);
+        emitFailed(question.canceled);
+        return false;
+    }
+    return true;
 }
 
 bool CheckModFiles::checkDamaged(ModFolderModel* mods)
@@ -79,37 +106,55 @@ bool CheckModFiles::checkDamaged(ModFolderModel* mods)
         tr("These mod files are damaged or aren't mods at all, and the mod loader will stop at them:\n  %1").arg(damaged.join("\n  ")),
         MessageLevel::Warning);
 
-    auto* dialog = CustomMessageBox::selectable(
-        nullptr, tr("Damaged mod files"),
-        tr("These files in the mods folder are damaged or aren't mods at all, as when a download was cut short, and the mod loader "
-           "will stop at them:\n\n"
-           "%1\n\n"
-           "Turn Them Off takes them out of the game (the Mods page can turn them back on). Download them again to use them.")
-            .arg(damaged.join("\n")),
-        QMessageBox::Icon::Warning, QMessageBox::StandardButton::Cancel, QMessageBox::StandardButton::NoButton);
-    auto* turnOff = dialog->addButton(tr("Turn Them Off"), QMessageBox::AcceptRole);
-    auto* launchAnyway = dialog->addButton(tr("Launch Anyway"), QMessageBox::ActionRole);
-    dialog->setDefaultButton(turnOff);
-    dialog->setEscapeButton(QMessageBox::StandardButton::Cancel);
-    dialog->exec();
-    auto* choice = dialog->clickedButton();
-    dialog->deleteLater();
+    return ask(mods, {
+                         .title = tr("Damaged mod files"),
+                         .text = tr("These files in the mods folder are damaged or aren't mods at all, as when a download was cut "
+                                    "short, and the mod loader will stop at them:\n\n"
+                                    "%1\n\n"
+                                    "Turn Them Off takes them out of the game (the Mods page can turn them back on). Download them "
+                                    "again to use them.")
+                                     .arg(damaged.join("\n")),
+                         .turnOff = tr("Turn Them Off"),
+                         .fileNames = damaged,
+                         .turnedOff = tr("Turned off the damaged mod files:"),
+                         .couldNotTurnOff = tr("Couldn't turn off the damaged mod files"),
+                         .canceled = tr("Some mod files are damaged"),
+                     });
+}
 
-    if (choice == turnOff) {
-        if (!mods->setModsEnabled(indexesOf(mods, damaged), EnableAction::DISABLE)) {
-            const auto reason = tr("Couldn't turn off the damaged mod files");
-            emit logLine(reason, MessageLevel::Fatal);
-            emitFailed(reason);
-            return false;
-        }
-        emit logLine(tr("Turned off the damaged mod files:\n  %1").arg(damaged.join("\n  ")), MessageLevel::Launcher);
-    } else if (choice != launchAnyway) {
-        const auto reason = tr("Some mod files are damaged");
-        emit logLine(reason, MessageLevel::Fatal);
-        emitFailed(reason);
-        return false;
+bool CheckModFiles::checkGameVersion(ModFolderModel* mods)
+{
+    const auto minecraft = m_parent->instance()->getPackProfile()->getComponentVersion("net.minecraft");
+    const auto others = mods->otherGameVersionMods(minecraft);
+    if (others.isEmpty()) {
+        return true;
     }
-    return true;
+
+    QStringList fileNames;
+    QStringList lines;
+    for (const auto* mod : others) {
+        fileNames << mod->fileinfo().fileName();
+        lines << tr("%1 (made for Minecraft %2)").arg(mod->fileinfo().fileName(), mod->details().minecraft.text());
+    }
+    emit logLine(tr("These mods are made for another version of Minecraft than this instance's %1, and the mod loader will stop at "
+                    "them:\n  %2")
+                     .arg(minecraft, lines.join("\n  ")),
+                 MessageLevel::Warning);
+
+    return ask(mods, {
+                         .title = tr("Mods for another version of Minecraft"),
+                         .text = tr("These mods say they are made for another version of Minecraft than this instance's %1, and the "
+                                    "mod loader will stop at them:\n\n"
+                                    "%2\n\n"
+                                    "Turn Them Off takes them out of the game (the Mods page can turn them back on). Get the versions "
+                                    "of them made for Minecraft %1 to use them.")
+                                     .arg(minecraft, lines.join("\n")),
+                         .turnOff = tr("Turn Them Off"),
+                         .fileNames = fileNames,
+                         .turnedOff = tr("Turned off the mods made for another version of Minecraft:"),
+                         .couldNotTurnOff = tr("Couldn't turn off the mods made for another version of Minecraft"),
+                         .canceled = tr("Some mods are made for another version of Minecraft"),
+                     });
 }
 
 bool CheckModFiles::checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders)
@@ -128,35 +173,19 @@ bool CheckModFiles::checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoader
         MessageLevel::Warning);
 
     const auto older = mods->olderDuplicates(loaders);
-    auto* dialog = CustomMessageBox::selectable(
-        nullptr, tr("Duplicate mods"),
-        tr("Some mods are enabled more than once, and the game won't start like this. Each line holds copies of one mod:\n\n"
-           "%1\n\n"
-           "Turn Off Older Copies keeps the latest version of each and turns these off (the Mods page can turn them back on):\n\n"
-           "%2")
-            .arg(lines.join("\n"), older.join("\n")),
-        QMessageBox::Icon::Warning, QMessageBox::StandardButton::Cancel, QMessageBox::StandardButton::NoButton);
-    auto* turnOff = dialog->addButton(tr("Turn Off Older Copies"), QMessageBox::AcceptRole);
-    auto* launchAnyway = dialog->addButton(tr("Launch Anyway"), QMessageBox::ActionRole);
-    dialog->setDefaultButton(turnOff);
-    dialog->setEscapeButton(QMessageBox::StandardButton::Cancel);
-    dialog->exec();
-    auto* choice = dialog->clickedButton();
-    dialog->deleteLater();
-
-    if (choice == turnOff) {
-        if (!mods->setModsEnabled(indexesOf(mods, older), EnableAction::DISABLE)) {
-            const auto reason = tr("Couldn't turn off the older copies of the mods");
-            emit logLine(reason, MessageLevel::Fatal);
-            emitFailed(reason);
-            return false;
-        }
-        emit logLine(tr("Turned off the older copies:\n  %1").arg(older.join("\n  ")), MessageLevel::Launcher);
-    } else if (choice != launchAnyway) {
-        const auto reason = tr("Some mods are enabled more than once");
-        emit logLine(reason, MessageLevel::Fatal);
-        emitFailed(reason);
-        return false;
-    }
-    return true;
+    return ask(mods, {
+                         .title = tr("Duplicate mods"),
+                         .text = tr("Some mods are enabled more than once, and the game won't start like this. Each line holds "
+                                    "copies of one mod:\n\n"
+                                    "%1\n\n"
+                                    "Turn Off Older Copies keeps the latest version of each and turns these off (the Mods page can "
+                                    "turn them back on):\n\n"
+                                    "%2")
+                                     .arg(lines.join("\n"), older.join("\n")),
+                         .turnOff = tr("Turn Off Older Copies"),
+                         .fileNames = older,
+                         .turnedOff = tr("Turned off the older copies:"),
+                         .couldNotTurnOff = tr("Couldn't turn off the older copies of the mods"),
+                         .canceled = tr("Some mods are enabled more than once"),
+                     });
 }

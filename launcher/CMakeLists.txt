@@ -325,6 +325,8 @@ set(MINECRAFT_SOURCES
     minecraft/WorldTasks.h
     minecraft/WorldTasks.cpp
 
+    minecraft/mod/GameVersionRequirement.h
+    minecraft/mod/GameVersionRequirement.cpp
     minecraft/mod/MetadataHandler.h
     minecraft/mod/Mod.h
     minecraft/mod/Mod.cpp

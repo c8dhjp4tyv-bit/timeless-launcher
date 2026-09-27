@@ -107,6 +107,52 @@ class DuplicateModsTest : public QObject {
     }
 
    private slots:
+    void otherGameVersion()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+
+        // as each loader's metadata gives the versions of Minecraft a mod works with
+        QVERIFY(writeJar(mods.filePath("fabric-old.jar"), "fabric.mod.json",
+                         R"({"schemaVersion": 1, "id": "old", "version": "1", "depends": {"minecraft": ">=1.20.1 <1.21"}})"));
+        QVERIFY(writeJar(mods.filePath("fabric-new.jar"), "fabric.mod.json",
+                         R"({"schemaVersion": 1, "id": "new", "version": "1", "depends": {"minecraft": ["1.20.6", "~1.21"]}})"));
+        QVERIFY(writeJar(mods.filePath("fabric-any.jar"), "fabric.mod.json", R"({"schemaVersion": 1, "id": "any", "version": "1"})"));
+        QVERIFY(writeJar(mods.filePath("quilt-old.jar"), "quilt.mod.json",
+                         R"({"schema_version": 1, "quilt_loader": {"id": "quiltold", "version": "1",
+                             "depends": [{"id": "minecraft", "versions": "1.20.1"}]}})"));
+        QVERIFY(writeJar(mods.filePath("forge-old.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"forgeold\"\nversion=\"1\"\n"
+                         "[[dependencies.forgeold]]\nmodId=\"minecraft\"\nmandatory=true\nversionRange=\"[1.20.1,1.20.2)\"\n"));
+        QVERIFY(writeJar(mods.filePath("neoforge-new.jar"), "META-INF/neoforge.mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[4,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"neonew\"\nversion=\"1\"\n"
+                         "[[dependencies.neonew]]\nmodId=\"minecraft\"\ntype=\"required\"\nversionRange=\"[1.21,1.21.2)\"\n"));
+        // one the loader doesn't hold to a version, and one turned off, which isn't loaded
+        QVERIFY(writeJar(mods.filePath("forge-optional.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"optional\"\nversion=\"1\"\n"
+                         "[[dependencies.optional]]\nmodId=\"minecraft\"\nmandatory=false\nversionRange=\"[1.20.1]\"\n"));
+        QVERIFY(QFile::copy(mods.filePath("fabric-old.jar"), mods.filePath("fabric-off.jar.disabled")));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+        QCOMPARE(model.rowCount(), 8);
+
+        const auto fileNames = [&model](const QString& minecraft) {
+            QStringList names;
+            for (const auto* mod : model.otherGameVersionMods(minecraft)) {
+                names << mod->fileinfo().fileName();
+            }
+            return names;
+        };
+        QCOMPARE(fileNames("1.21"), QStringList({ "fabric-old.jar", "forge-old.jar", "quilt-old.jar" }));
+        QCOMPARE(fileNames("1.20.1"), QStringList({ "fabric-new.jar", "neoforge-new.jar" }));
+        // a snapshot isn't compared
+        QCOMPARE(fileNames("24w14a"), QStringList());
+
+        const auto& old = static_cast<const Mod&>(model.at(indexOf(model, "fabric-old.jar").row()));
+        QCOMPARE(old.details().minecraft.text(), ">=1.20.1 <1.21");
+    }
+
     void damaged()
     {
         const QTemporaryDir mods;

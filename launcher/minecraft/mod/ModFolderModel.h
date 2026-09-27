@@ -124,6 +124,12 @@ class ModFolderModel : public ResourceFolderModel {
     /** The file names of the enabled mods Java can't open, as when their download was cut short, which stop the mod loader too */
     QStringList damagedMods();
 
+    /**
+     * The enabled mods whose own metadata says they are made for another version of Minecraft than this one, which their mod
+     * loaders refuse to start the game with, by file name
+     */
+    QList<Mod*> otherGameVersionMods(const QString& minecraftVersion);
+
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;
     void onParseFinished();
@@ -131,6 +137,8 @@ class ModFolderModel : public ResourceFolderModel {
 
    private:
     void updateDuplicates();
+    /** The version of Minecraft the instance runs, or nothing without an instance */
+    QString minecraftVersion() const;
 
     QHash<QString, QSet<Mod*>> m_requiredBy;
     QHash<QString, QSet<Mod*>> m_requires;

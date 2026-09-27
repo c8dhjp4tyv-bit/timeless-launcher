@@ -54,6 +54,8 @@
 #include <set>
 
 #include "Version.h"
+#include "minecraft/MinecraftInstance.h"
+#include "minecraft/PackProfile.h"
 #include "minecraft/mod/Resource.h"
 #include "minecraft/mod/ResourceFolderModel.h"
 #include "minecraft/mod/tasks/LocalModParseTask.h"
@@ -92,12 +94,15 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
     int column = index.column();
 
     const auto duplicates = duplicatesOf(at(row).internalId());
-    // like two copies of a mod, this stops the mod loader, but only while it's enabled
+    // like two copies of a mod, these stop the mod loader, but only while the mod is enabled
     const auto damaged = at(row).enabled() && at(row).details().damaged;
+    const auto& requirement = at(row).details().minecraft;
+    const auto minecraft = at(row).enabled() && requirement.isSet() ? minecraftVersion() : QString();
+    const auto forOtherVersion = !minecraft.isEmpty() && !requirement.accepts(minecraft);
 
     switch (role) {
         case Qt::BackgroundRole:
-            if (!duplicates.isEmpty() || damaged) {
+            if (!duplicates.isEmpty() || damaged || forOtherVersion) {
                 return QBrush(QColor(255, 0, 0, 40));
             }
             return rowBackground(row);
@@ -137,7 +142,7 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
             if (column == ImageColumn) {
                 return at(row).icon({ 32, 32 }, Qt::AspectRatioMode::KeepAspectRatioByExpanding);
             }
-            if (column == NameColumn && (!duplicates.isEmpty() || damaged)) {
+            if (column == NameColumn && (!duplicates.isEmpty() || damaged || forOtherVersion)) {
                 return QIcon::fromTheme("status-bad");
             }
             break;
@@ -173,6 +178,12 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
                     if (damaged) {
                         tooltip += "\n" + tr("Damaged: this file is cut short or isn't a mod at all, as when its download was cut short, "
                                              "and the mod loader will stop at it. Download it again, or disable it.");
+                    }
+                    if (forOtherVersion) {
+                        tooltip += "\n" + tr("Made for another version of Minecraft: it says it works with Minecraft %1, and this "
+                                             "instance has %2. The mod loader will stop at it, so get the version of the mod made for "
+                                             "%2, or disable it.")
+                                              .arg(requirement.text(), minecraft);
                     }
                     return tooltip;
                 }
@@ -412,6 +423,26 @@ QStringList ModFolderModel::damagedMods()
     }
     damaged.sort();
     return damaged;
+}
+
+QList<Mod*> ModFolderModel::otherGameVersionMods(const QString& minecraftVersion)
+{
+    QList<Mod*> mods;
+    for (auto* mod : allMods()) {
+        if (mod->enabled() && !mod->details().minecraft.accepts(minecraftVersion)) {
+            mods << mod;
+        }
+    }
+    std::ranges::sort(mods, [](const Mod* a, const Mod* b) { return a->fileinfo().fileName() < b->fileinfo().fileName(); });
+    return mods;
+}
+
+QString ModFolderModel::minecraftVersion() const
+{
+    if (m_instance == nullptr) {
+        return {};
+    }
+    return m_instance->getPackProfile()->getComponentVersion("net.minecraft");
 }
 
 QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)

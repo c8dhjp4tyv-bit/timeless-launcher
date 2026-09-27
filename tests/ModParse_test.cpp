@@ -131,6 +131,55 @@ class ModParseTest : public QObject {
         QCOMPARE(details.icon_file, expected);
     }
 
+    void minecraftRequirement_data()
+    {
+        QTest::addColumn<QString>("metadataFile");
+        QTest::addColumn<QByteArray>("metadata");
+        // the requirement read, or nothing when the mod is held to no version
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("Fabric, one predicate") << "fabric.mod.json" << fabricMod(R"("depends": {"minecraft": "~1.20.1"})") << "~1.20.1";
+        QTest::newRow("Fabric, any of two") << "fabric.mod.json" << fabricMod(R"("depends": {"minecraft": ["1.20.1", "1.20.2"]})")
+                                            << "1.20.1, 1.20.2";
+        QTest::newRow("Fabric, recommended only") << "fabric.mod.json" << fabricMod(R"("recommends": {"minecraft": "1.20.1"})") << "";
+        QTest::newRow("Fabric, not strings") << "fabric.mod.json" << fabricMod(R"("depends": {"minecraft": ["1.20.1", {"a": 1}]})") << "";
+        QTest::newRow("Quilt") << "quilt.mod.json" << quiltMod(R"("depends": [{"id": "minecraft", "versions": ">=1.20"}])") << ">=1.20";
+        QTest::newRow("Quilt, any and all") << "quilt.mod.json"
+                                            << quiltMod(R"("depends": [{"id": "minecraft", "versions": {"any": ["1.20"]}}])") << "";
+        QTest::newRow("Quilt, only in some case")
+            << "quilt.mod.json" << quiltMod(R"("depends": [{"id": "minecraft", "versions": "1.20", "unless": "other"}])") << "";
+        QTest::newRow("Quilt, optional") << "quilt.mod.json"
+                                         << quiltMod(R"("depends": [{"id": "minecraft", "versions": "1.20", "optional": true}])") << "";
+        const QString forge =
+            "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"example\"\nversion=\"1\"\n"
+            "[[dependencies.example]]\nmodId=\"minecraft\"\n%1\nversionRange=\"[1.20.1,1.21)\"\n";
+        QTest::newRow("Forge") << "META-INF/mods.toml" << forge.arg("mandatory=true").toUtf8() << "[1.20.1,1.21)";
+        QTest::newRow("Forge, not mandatory") << "META-INF/mods.toml" << forge.arg("mandatory=false").toUtf8() << "";
+        QTest::newRow("NeoForge") << "META-INF/neoforge.mods.toml" << forge.arg("type=\"required\"").toUtf8() << "[1.20.1,1.21)";
+        QTest::newRow("NeoForge, optional") << "META-INF/neoforge.mods.toml" << forge.arg("type=\"optional\"").toUtf8() << "";
+    }
+
+    void minecraftRequirement()
+    {
+        QFETCH(const QString, metadataFile);
+        QFETCH(const QByteArray, metadata);
+        QFETCH(const QString, expected);
+
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("mod.jar");
+        {
+            MMCZip::ArchiveWriter jar(path);
+            QVERIFY(jar.open());
+            QVERIFY(jar.addFile(metadataFile, metadata));
+            QVERIFY(jar.close());
+        }
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.details().minecraft.isSet(), !expected.isEmpty());
+        QCOMPARE(mod.details().minecraft.text(), expected);
+    }
+
     void missingZipEnd_data()
     {
         QTest::addColumn<QByteArray>("contents");
