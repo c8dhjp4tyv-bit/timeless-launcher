@@ -60,6 +60,7 @@
 #include "minecraft/launch/CheckModFiles.h"
 #include "minecraft/launch/ClaimAccount.h"
 #include "minecraft/launch/CreateGameFolders.h"
+#include "minecraft/launch/EnsureAvailableDiskSpace.h"
 #include "minecraft/launch/EnsureAvailableMemory.h"
 #include "minecraft/launch/EnsureOfflineLibraries.h"
 #include "minecraft/launch/ExtractNatives.h"
@@ -1233,6 +1234,11 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
     // make sure we have enough RAM, warn the user if we don't
     {
         process->appendStep(makeShared<EnsureAvailableMemory>(pptr, this));
+    }
+
+    // a disk that fills up while the game saves costs parts of the world, so ask first when it's nearly full
+    {
+        process->appendStep(makeShared<EnsureAvailableDiskSpace>(pptr));
     }
 
     // back up the worlds played since their last backup, after the checks that may call the launch off

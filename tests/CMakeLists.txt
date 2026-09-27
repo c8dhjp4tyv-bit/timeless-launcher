@@ -106,6 +106,9 @@ ecm_add_test(CrashHints_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MA
 ecm_add_test(GameVersionRequirement_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME GameVersionRequirement)
 
+ecm_add_test(EnsureAvailableDiskSpace_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME EnsureAvailableDiskSpace)
+
 ecm_add_test(LoggedProcess_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME LoggedProcess)
 
