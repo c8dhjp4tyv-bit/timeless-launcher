@@ -176,6 +176,31 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
 
     // Mods the mod loader can't load, as it explains it
 
+    // A mod file Fabric can't read as a jar at all, as after a download that was cut short. It names the files it was looking at,
+    // those of the mod the jar came in for a jar inside a mod.
+    static const QRegularExpression s_unreadableModFile(
+        R"(Error analyzing (?:nested jar \S+ from )?\[([^\]\n]+)\]: java\.util\.zip\.ZipException: ([^\n]+))");
+    QStringList unreadable;
+    for (auto matches = s_unreadableModFile.globalMatch(log); matches.hasNext();) {
+        const auto match = matches.next();
+        // the file's name is enough, and the path may be a Windows one
+        const auto path = match.captured(1).split(", ").first();
+        const auto fileName = path.mid(std::max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+        const auto entry = tr("%1 (%2)").arg(fileName, match.captured(2).trimmed());
+        if (!unreadable.contains(entry)) {
+            unreadable << entry;
+        }
+    }
+    if (unreadable.size() == 1) {
+        hints << tr("The mod file %1 is damaged or isn't a mod at all, as when its download was cut short. Download it again, or take "
+                    "it out of the mods folder.")
+                     .arg(unreadable.first());
+    } else if (!unreadable.isEmpty()) {
+        hints << tr("These mod files are damaged or aren't mods at all, as when their downloads were cut short: %1. Download them "
+                    "again, or take them out of the mods folder.")
+                     .arg(unreadable.join(", "));
+    }
+
     // Fabric and Quilt, which also work out what to change when they can
     static const QRegularExpression s_incompatibleMods(
         "Mod resolution encountered an incompatible mod set!|Some of your mods are incompatible with the game or each other!");

@@ -217,6 +217,29 @@ class CrashHintsTest : public QObject {
                "\t - Mod 'Iris' (iris) 1.6.4 requires any version of sodium, which is missing!\n"
             << 17 << QList<QStringList>{ { "can't load these mods together", "which mod needs what" } };
 
+        // as Fabric Loader reports it, once when the game stops and again in the crash report
+        QTest::newRow("damaged mod file")
+            << "net.fabricmc.loader.impl.FormattedException: net.fabricmc.loader.impl.discovery.ModResolutionException: Mod discovery "
+               "failed!\n"
+               "Caused by: java.lang.RuntimeException: Error analyzing [/home/player/.local/share/TimelessLauncher/instances/Pack/"
+               "minecraft/mods/sodium-fabric-0.5.8.jar]: java.util.zip.ZipException: zip END header not found\n"
+               "Caused by: java.lang.RuntimeException: Error analyzing [/home/player/.local/share/TimelessLauncher/instances/Pack/"
+               "minecraft/mods/sodium-fabric-0.5.8.jar]: java.util.zip.ZipException: zip END header not found\n"
+            << 17 << QList<QStringList>{ { "The mod file sodium-fabric-0.5.8.jar (zip END header not found) is damaged", "again" } };
+
+        // a jar inside a mod is the mod's to be downloaded again
+        QTest::newRow("damaged jar inside a mod, on Windows")
+            << "Caused by: java.lang.RuntimeException: Error analyzing nested jar META-INF/jars/fabric-api-base-0.4.31.jar from "
+               "[C:\\Users\\Player\\AppData\\Roaming\\TimelessLauncher\\instances\\Pack\\minecraft\\mods\\fabric-api-0.92.2.jar]: "
+               "java.util.zip.ZipException: invalid CEN header (bad signature)\n"
+            << 17 << QList<QStringList>{ { "The mod file fabric-api-0.92.2.jar (invalid CEN header (bad signature))" } };
+
+        QTest::newRow("damaged mod files")
+            << "Caused by: java.lang.RuntimeException: Error analyzing [/mods/a.jar]: java.util.zip.ZipException: zip file is empty\n"
+               "Caused by: java.lang.RuntimeException: Error analyzing [/mods/b.jar]: java.util.zip.ZipException: zip END header not "
+               "found\n"
+            << 17 << QList<QStringList>{ { "These mod files are damaged", "a.jar (zip file is empty), b.jar (zip END header not found)" } };
+
         QTest::newRow("Forge dependencies")
             << "[main/ERROR] [net.minecraftforge.fml.loading.ModSorter/LOADING]: Missing or unsupported mandatory dependencies:\n"
                "\tMod ID: 'architectury', Requested by: 'roughlyenoughitems', Expected range: '[9.1.12,)', Actual version: "
