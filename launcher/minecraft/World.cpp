@@ -316,7 +316,12 @@ bool World::install(const QString& to, const QString& name)
         return false;
     }
 
-    auto finalPath = FS::PathCombine(to, FS::DirNameFromString(m_actualName, to));
+    // a folder of its own that isn't there yet, which is what makes removing it again below safe
+    const auto folderName = FS::DirNameFromString(m_actualName, to);
+    if (folderName.isEmpty()) {
+        return false;
+    }
+    auto finalPath = FS::PathCombine(to, folderName);
     if (!FS::ensureFolderPathExists(finalPath)) {
         return false;
     }
@@ -329,15 +334,20 @@ bool World::install(const QString& to, const QString& name)
         QString from = m_containerFile.filePath();
         ok = FS::copy(from, finalPath)();
     }
+    if (!ok) {
+        // what got there before the failure, as the start of a zip that was cut short, is no world the game could open
+        FS::deletePath(finalPath);
+        return false;
+    }
 
-    if (ok && !name.isEmpty() && m_actualName != name) {
+    if (!name.isEmpty() && m_actualName != name) {
         QFileInfo finalPathInfo(finalPath);
         World newWorld(finalPathInfo);
         if (newWorld.isValid()) {
             newWorld.rename(name);
         }
     }
-    return ok;
+    return true;
 }
 
 bool World::rename(const QString& newName)

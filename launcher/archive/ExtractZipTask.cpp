@@ -38,8 +38,10 @@ auto ExtractZipTask::extractZip() -> ZipResult
     QStringList extracted;
 
     qDebug() << "Extracting subdir" << m_subdirectory << "from" << m_input.getZipName() << "to" << target;
+    // Reading the whole archive before extracting any of it means one that was cut short leaves nothing half there
     if (!m_input.collectFiles()) {
-        return ZipResult(tr("Failed to enumerate files in archive"));
+        return { tr("Couldn't read %1: %2. It may be damaged or incomplete, as when a download is cut short.")
+                     .arg(QFileInfo(m_input.getZipName()).fileName(), m_input.errorString()) };
     }
     if (m_input.getFiles().isEmpty()) {
         logWarning(tr("Extracting empty archives seems odd..."));

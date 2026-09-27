@@ -110,6 +110,7 @@ bool processZIP(DataPack* pack, ProcessingLevel level)
     bool iconParsed = false;
     bool mcmeta_result = false;
     bool pack_png_result = false;
+    // a pack that breaks off, as when its download was cut short, is still listed, with what could be read of it
     if (!zip.parse(
             [&metaParsed, &iconParsed, &mcmeta_result, &pack_png_result, pack, level](MMCZip::ArchiveReader::File* f, bool& breakControl) {
                 bool skip = true;
@@ -144,7 +145,8 @@ bool processZIP(DataPack* pack, ProcessingLevel level)
                 }
 
                 return true;
-            })) {
+            }) &&
+        !zip.endedEarly()) {
         return false;  // can't open zip file
     }
     if (!mcmeta_result) {

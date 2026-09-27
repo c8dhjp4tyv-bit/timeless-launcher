@@ -16,6 +16,7 @@
  */
 
 #include <QDirIterator>
+#include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -71,6 +72,40 @@ class ExtractZipTest : public QObject {
         QVERIFY(task.wasSuccessful());
 
         QCOMPARE(filesIn(target), (QStringList{ "instance.cfg", "minecraft/options.txt" }));
+    }
+
+    void cutShort()
+    {
+        // An instance zip whose download stopped where its last file starts. None of it is extracted, rather than the files
+        // before the cut as if they were all of it.
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const auto zipPath = temp.filePath("instance.zip");
+        MMCZip::ArchiveWriter zip(zipPath);
+        QVERIFY(zip.open());
+        QVERIFY(zip.addFile("instance.cfg", QByteArray("[General]\n")));
+        QVERIFY(zip.addFile("minecraft/options.txt", QByteArray("fov:70\n")));
+        QVERIFY(zip.addFile("minecraft/servers.dat", QByteArray("servers\n")));
+        QVERIFY(zip.close());
+
+        QFile file(zipPath);
+        QVERIFY(file.open(QIODevice::ReadWrite));
+        // the header of a file starts 30 bytes before its name
+        const auto lastHeader = file.readAll().indexOf("minecraft/servers.dat") - 30;
+        QVERIFY(lastHeader > 0);
+        QVERIFY(file.resize(lastHeader));
+        file.close();
+
+        const auto target = temp.filePath("extracted");
+        MMCZip::ExtractZipTask task(zipPath, QDir(target));
+        const QSignalSpy finished(&task, &Task::finished);
+        task.start();
+        QTRY_COMPARE(finished.count(), 1);
+        QVERIFY(!task.wasSuccessful());
+        QVERIFY2(task.failReason().contains("instance.zip"), qPrintable(task.failReason()));
+
+        QCOMPARE(filesIn(target), QStringList());
     }
 };
 

@@ -125,6 +125,37 @@ class WorldTest : public QObject {
         QCOMPARE(QDir(saves).entryList(QDir::Dirs | QDir::NoDotAndDotDot), QStringList{ "My World" });
     }
 
+    void installCutShortZip()
+    {
+        // A world zip whose download stopped where its last region file starts. Nothing is installed, rather than a world that
+        // is missing part of its map.
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const auto zipPath = temp.filePath("download.zip");
+        MMCZip::ArchiveWriter zip(zipPath);
+        QVERIFY(zip.open());
+        QVERIFY(zip.addFile("MyWorld/level.dat", levelDat("My World")));
+        QVERIFY(zip.addFile("MyWorld/region/r.0.0.mca", QByteArray("region")));
+        QVERIFY(zip.addFile("MyWorld/region/r.0.1.mca", QByteArray("region")));
+        QVERIFY(zip.close());
+
+        QFile file(zipPath);
+        QVERIFY(file.open(QIODevice::ReadWrite));
+        // the header of a file starts 30 bytes before its name
+        const auto lastHeader = file.readAll().indexOf("MyWorld/region/r.0.1.mca") - 30;
+        QVERIFY(lastHeader > 0);
+        QVERIFY(file.resize(lastHeader));
+        file.close();
+
+        const auto saves = temp.filePath("saves");
+        QVERIFY(FS::ensureFolderPathExists(saves));
+
+        World world{ QFileInfo(zipPath) };
+        QVERIFY(!world.install(saves));
+        QVERIFY(QDir(saves).isEmpty());
+    }
+
     void installZipWithoutWorld()
     {
         QTemporaryDir temp;

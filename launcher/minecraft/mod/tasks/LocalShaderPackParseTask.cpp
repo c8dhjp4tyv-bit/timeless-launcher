@@ -61,8 +61,10 @@ bool processZIP(ShaderPack& pack, ProcessingLevel level)
     Q_ASSERT(pack.type() == ResourceType::ZIPFILE);
 
     MMCZip::ArchiveReader zip(pack.fileinfo().filePath());
-    if (!zip.collectFiles(false))
+    // a pack that breaks off, as when its download was cut short, is still listed, from the files before that
+    if (!zip.collectFiles(false) && !zip.endedEarly()) {
         return false;  // can't open zip file
+    }
 
     if (!zip.exists("/shaders")) {
         // assets dir does not exists at zip root, but shader packs

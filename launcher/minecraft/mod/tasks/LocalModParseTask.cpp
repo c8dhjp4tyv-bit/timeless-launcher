@@ -572,6 +572,8 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
     QByteArray nilData = {};
     QString nilFilePath = {};
 
+    // A mod file that breaks off, as when its download was cut short, can hold its metadata before that, which names the mod on
+    // the Mods page all the same
     if (!zip.parse([&details, &baseForgePopulated, &manifestVersion, &isValid, &nilData, &isNilMod, &nilFilePath](
                        MMCZip::ArchiveReader::File* file, bool& stop) {
             auto filePath = file->filename();
@@ -657,7 +659,8 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
             }
             file->skip();
             return true;
-        })) {
+        }) &&
+        !zip.endedEarly()) {
         return false;
     }
     if (isNilMod) {

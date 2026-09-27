@@ -64,13 +64,23 @@ class ArchiveReader {
     };
 
     std::unique_ptr<File> goToFile(const QString& filename);
+    /// Hands each entry to the function until it asks to stop. Fails when the function does, and when the archive can't be
+    /// read to its end, as when it is damaged or was cut short.
     bool parse(const std::function<bool(File*)>&);
     bool parse(const std::function<bool(File*, bool&)>&);
+    /// Why the last parse() or collectFiles() failed, as libarchive put it, when reading the archive is what failed
+    QString errorString() const { return m_errorString; }
+    /// Whether the last parse() or collectFiles() failed only because the archive broke off before its end, as a damaged or
+    /// cut-short one does, after handing on the entries before that. What reads just a few of them, as a pack's metadata,
+    /// can use those; what extracts it must not.
+    bool endedEarly() const { return m_endedEarly; }
 
    private:
     QString m_archivePath;
     size_t m_blockSize = 10240;
 
     QStringList m_fileNames;
+    QString m_errorString;
+    bool m_endedEarly = false;
 };
 }  // namespace MMCZip

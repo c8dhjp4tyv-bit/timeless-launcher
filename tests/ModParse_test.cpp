@@ -163,6 +163,44 @@ class ModParseTest : public QObject {
         QCOMPARE(ModUtils::isMissingZipEnd(path), missing);
     }
 
+    void metadataOfACutShortJar()
+    {
+        // A Forge mod reads on after its mods.toml for the version in its manifest, and the cut comes first. The mod is still
+        // named by what was read before it, as the Mods page shows the damaged file.
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("mod.jar");
+        const QByteArray modsToml(
+            "modLoader=\"javafml\"\n"
+            "loaderVersion=\"[47,)\"\n"
+            "license=\"MIT\"\n"
+            "[[mods]]\n"
+            "modId=\"example\"\n"
+            "version=\"${file.jarVersion}\"\n"
+            "displayName=\"Example Mod\"\n");
+        QByteArray data;
+        for (int i = 0; i < 20000; i++) {
+            data.append(static_cast<char>((i * 7919 + i / 13) % 256));
+        }
+        {
+            MMCZip::ArchiveWriter jar(path);
+            QVERIFY(jar.open());
+            QVERIFY(jar.addFile("META-INF/mods.toml", modsToml));
+            QVERIFY(jar.addFile("assets/example/data.bin", data));
+            QVERIFY(jar.addFile("META-INF/MANIFEST.MF", QByteArray("Manifest-Version: 1.0\nImplementation-Version: 1.2.3\n")));
+            QVERIFY(jar.close());
+        }
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadWrite));
+        QVERIFY(file.resize(file.size() / 2));
+        file.close();
+
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.mod_id(), "example");
+        QCOMPARE(mod.name(), "Example Mod");
+    }
+
     void missingZipEndOfAFileThatIsGone()
     {
         // nothing can be told of a file that can't be read, so it doesn't count as damaged

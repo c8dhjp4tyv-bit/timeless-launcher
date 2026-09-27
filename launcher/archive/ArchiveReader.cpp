@@ -21,6 +21,7 @@
 #include "ArchiveReader.h"
 #include <archive.h>
 #include <archive_entry.h>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QUrl>
@@ -40,7 +41,9 @@ bool ArchiveReader::collectFiles(bool onlyFiles)
         if (!onlyFiles || f->isFile()) {
             m_fileNames << f->filename();
         }
-        return f->skip();
+        // a file that breaks off also ends the entries after it, which parse() tells from their end
+        f->skip();
+        return true;
     });
 }
 
@@ -92,6 +95,15 @@ int ArchiveReader::File::readNextHeader()
     return archive_read_next_header(m_archive.get(), &m_entry);
 }
 
+namespace {
+/// libarchive reads a header it warns about all the same, as one whose sizes or checksum the zip's own list of its files
+/// disagrees with, so only a worse status ends the entries
+bool isReadable(int headerStatus)
+{
+    return headerStatus == ARCHIVE_OK || headerStatus == ARCHIVE_WARN;
+}
+}  // namespace
+
 auto ArchiveReader::goToFile(const QString& filename) -> std::unique_ptr<File>
 {
     auto f = std::make_unique<File>();
@@ -104,7 +116,7 @@ auto ArchiveReader::goToFile(const QString& filename) -> std::unique_ptr<File>
         return nullptr;
     }
 
-    while (f->readNextHeader() == ARCHIVE_OK) {
+    while (isReadable(f->readNextHeader())) {
         if (f->filename() == filename) {
             return f;
         }
@@ -263,25 +275,45 @@ bool ArchiveReader::File::writeFile(archive* out, const QString& targetFileName,
 
 bool ArchiveReader::parse(const std::function<bool(File*, bool&)>& doStuff)
 {
+    m_errorString.clear();
+    m_endedEarly = false;
     auto f = std::make_unique<File>();
     auto* a = f->m_archive.get();
     archive_read_support_format_all(a);
     archive_read_support_filter_all(a);
     auto fileName = m_archivePath.toStdWString();
     if (archive_read_open_filename_w(a, fileName.data(), m_blockSize) != ARCHIVE_OK) {
-        qCritical() << "Failed to open archive file:" << m_archivePath << "-" << f->error();
+        m_errorString = QString::fromUtf8(f->error());
+        qCritical() << "Failed to open archive file:" << m_archivePath << "-" << m_errorString;
         return false;
     }
 
     bool breakControl = false;
-    while (f->readNextHeader() == ARCHIVE_OK) {
+    int status = ARCHIVE_OK;
+    while (isReadable(status = f->readNextHeader())) {
+        if (status == ARCHIVE_WARN) {
+            qWarning() << "Reading" << f->filename() << "from" << m_archivePath << "-" << f->error();
+        }
         if (f && !doStuff(f.get(), breakControl)) {
-            qCritical() << "Failed to parse file:" << f->filename() << "-" << f->error();
+            m_errorString = QString::fromUtf8(f->error());
+            qCritical() << "Failed to parse file:" << f->filename() << "-" << m_errorString;
             return false;
         }
         if (breakControl) {
             break;
         }
+    }
+    // Anything but the end means the archive is damaged or was cut short, as a download can be, and only the files before
+    // that were read
+    if (!breakControl && status != ARCHIVE_EOF) {
+        m_endedEarly = true;
+        m_errorString = QString::fromUtf8(f->error());
+        if (m_errorString.isEmpty()) {
+            // what libarchive leaves it at when a zip ends right where the next file should start
+            m_errorString = QCoreApplication::translate("MMCZip::ArchiveReader", "Unexpected end of archive");
+        }
+        qCritical() << "Failed to read archive file:" << m_archivePath << "-" << m_errorString;
+        return false;
     }
 
     archive_read_close(a);
