@@ -45,6 +45,7 @@
 #include <FileSystem.h>
 #include <io/stream_reader.h>
 #include <minecraft/MinecraftInstance.h>
+#include <minecraft/NbtSizeCheck.h>
 #include <tag_compound.h>
 #include <tag_list.h>
 #include <tag_primitive.h>
@@ -126,6 +127,10 @@ static std::unique_ptr<nbt::tag_compound> parseServersDat(const QString& filenam
 {
     try {
         QByteArray input = FS::read(filename);
+        if (!NbtSizeCheck::fits(input)) {
+            qWarning() << "Unable to parse" << filename << "- it is damaged, or claims more than it holds";
+            return nullptr;
+        }
         std::istringstream foo(std::string(input.constData(), input.size()));
         auto pair = nbt::io::read_compound(foo);
 

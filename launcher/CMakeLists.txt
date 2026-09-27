@@ -316,6 +316,8 @@ set(MINECRAFT_SOURCES
     minecraft/VersionFilterData.cpp
     minecraft/World.h
     minecraft/World.cpp
+    minecraft/NbtSizeCheck.h
+    minecraft/NbtSizeCheck.cpp
     minecraft/WorldBackups.h
     minecraft/WorldBackups.cpp
     minecraft/WorldList.h

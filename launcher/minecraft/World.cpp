@@ -47,6 +47,7 @@
 #include <tag_string.h>
 #include <sstream>
 #include "GZip.h"
+#include "NbtSizeCheck.h"
 
 #include <QCoreApplication>
 
@@ -128,6 +129,10 @@ std::unique_ptr<nbt::tag_compound> parseLevelDat(QByteArray data)
     constexpr qsizetype maxLevelDatSize = qsizetype{ 64 } * 1024 * 1024;
     QByteArray output;
     if (!GZip::unzip(data, output, maxLevelDatSize)) {
+        return nullptr;
+    }
+    if (!NbtSizeCheck::fits(output)) {
+        qWarning() << "Unable to parse level.dat: it is damaged, or claims more than it holds";
         return nullptr;
     }
     std::istringstream foo(std::string(output.constData(), output.size()));

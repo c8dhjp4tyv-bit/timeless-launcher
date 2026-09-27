@@ -59,6 +59,16 @@ class WorldTest : public QObject {
         return compressed;
     }
 
+    /// The values one after the other, big-endian as NBT has them
+    template <typename... Values>
+    static QByteArray bigEndian(Values... values)
+    {
+        QByteArray bytes;
+        QDataStream out(&bytes, QIODevice::WriteOnly);
+        (out << ... << values);
+        return bytes;
+    }
+
     static QString nameOf(const QString& worldFolder)
     {
         World world{ QFileInfo(worldFolder) };
@@ -361,19 +371,30 @@ class WorldTest : public QObject {
         QVERIFY(WorldBackups::allBackupsOf(saves, "Nothing").isEmpty());
     }
 
-    void levelDatClaimingAHugeList()
+    void levelDatClaimingMoreThanItHolds_data()
     {
-        // A level.dat with a list that claims two billion entries and holds none, as a damaged or made up one can. The
-        // parser sets aside room for all of them before it reads any, which can fail for lack of memory. Written by hand,
-        // since a list can't be made to claim more than it holds.
-        QByteArray raw;
-        QDataStream out(&raw, QIODevice::WriteOnly);
-        out << quint8(10) << quint16(0);  // the compound around everything, without a name
-        out << quint8(10) << quint16(4);
-        out.writeRawData("Data", 4);
-        out << quint8(9) << quint16(4);
-        out.writeRawData("Mods", 4);
-        out << quint8(3) << std::numeric_limits<qint32>::max();  // of ints
+        // an entry of the world's Data, as its type and what follows its name
+        QTest::addColumn<quint8>("type");
+        QTest::addColumn<QByteArray>("payload");
+
+        const auto twoBillion = std::numeric_limits<qint32>::max();
+        QTest::newRow("list of ints") << quint8(9) << bigEndian(quint8(3), twoBillion);
+        QTest::newRow("byte array") << quint8(7) << bigEndian(twoBillion);
+        QTest::newRow("int array") << quint8(11) << bigEndian(twoBillion);
+        QTest::newRow("long array") << quint8(12) << bigEndian(twoBillion);
+        QTest::newRow("list in a list") << quint8(9) << bigEndian(quint8(9), qint32(1), quint8(3), twoBillion);
+    }
+
+    void levelDatClaimingMoreThanItHolds()
+    {
+        // A level.dat with an entry that claims two billion values and holds none, as a damaged or made-up one can. The NBT
+        // library would set aside room for all of them before reading any, and read an int array's on past the end of the
+        // data. Written by hand, since a list or array can't be made to claim more than it holds.
+        QFETCH(const quint8, type);
+        QFETCH(const QByteArray, payload);
+        QByteArray raw = bigEndian(quint8(10), quint16(0));  // the compound around everything, without a name
+        raw += bigEndian(quint8(10), quint16(4)) + "Data";
+        raw += bigEndian(type, quint16(4)) + "Mods" + payload;
 
         const QTemporaryDir saves;
         QVERIFY(saves.isValid());
@@ -385,6 +406,47 @@ class WorldTest : public QObject {
         World world{ QFileInfo(folder) };
         world.loadMetadata();
         QVERIFY(!world.isValid());
+    }
+
+    void levelDatWithArraysAndLists()
+    {
+        // arrays and lists of all kinds, as the game and mods write them, which go on being read
+        nbt::tag_compound data;
+        data.put("LevelName", nbt::tag_string("Big World"));
+        data.put("LastPlayed", nbt::tag_long(1700000000000));
+        data.put("GameType", nbt::tag_int(1));
+        data.put("Difficulty", nbt::tag_byte(2));
+        data.put("SpawnAngle", nbt::tag_float(90.0F));
+        data.put("BorderSize", nbt::tag_double(59999968.0));
+        data.put("Version", nbt::tag_short(19133));
+        data.put("Bytes", nbt::tag_byte_array{ 1, 2, 3 });
+        data.put("Ints", nbt::tag_int_array{ 1, 2, 3 });
+        data.put("Longs", nbt::tag_long_array{ 1, 2 });
+        nbt::tag_compound player;
+        player.put("Name", nbt::tag_string("Steve"));
+        player.put("Pos", nbt::tag_list{ 1.5, 64.0, -3.5 });
+        data.put("Players", nbt::tag_list{ player, player });
+        data.put("Lists", nbt::tag_list{ nbt::tag_list{ int32_t(1), int32_t(2) }, nbt::tag_list() });
+        data.put("Nothing", nbt::tag_list());  // written as a list of End
+        nbt::tag_compound root;
+        root.put("Data", std::move(data));
+
+        std::ostringstream stream;
+        nbt::io::write_tag("", root, stream);
+        QByteArray compressed;
+        QVERIFY(GZip::zip(QByteArray::fromStdString(stream.str()), compressed));
+
+        const QTemporaryDir saves;
+        QVERIFY(saves.isValid());
+        const auto folder = saves.filePath("World");
+        FS::write(FS::PathCombine(folder, "level.dat"), compressed);
+
+        World world{ QFileInfo(folder) };
+        world.loadMetadata();
+        QVERIFY(world.isValid());
+        QCOMPARE(world.name(), "Big World");
+        QCOMPARE(world.lastPlayed(), QDateTime::fromMSecsSinceEpoch(1700000000000));
+        QCOMPARE(world.gameType().type, GameType::Creative);
     }
 
     void renameWithoutLevelData()
