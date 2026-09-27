@@ -62,7 +62,7 @@ bool GZip::unzip(const QByteArray& compressedBytes, QByteArray& uncompressedByte
     int err = Z_OK;
     while (err != Z_STREAM_END) {
         strm.next_out = block.data();
-        strm.avail_out = block.size();
+        strm.avail_out = static_cast<uInt>(block.size());
 
         err = inflate(&strm, Z_SYNC_FLUSH);
         if (err != Z_OK && err != Z_STREAM_END) {
