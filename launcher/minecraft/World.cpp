@@ -124,8 +124,10 @@ QString GameType::toLogString() const
 
 std::unique_ptr<nbt::tag_compound> parseLevelDat(QByteArray data)
 {
+    // Far more than any level.dat holds. One that inflates to more is damaged, or made to use up the memory it's read into.
+    constexpr qsizetype maxLevelDatSize = qsizetype{ 64 } * 1024 * 1024;
     QByteArray output;
-    if (!GZip::unzip(data, output)) {
+    if (!GZip::unzip(data, output, maxLevelDatSize)) {
         return nullptr;
     }
     std::istringstream foo(std::string(output.constData(), output.size()));
@@ -139,7 +141,8 @@ std::unique_ptr<nbt::tag_compound> parseLevelDat(QByteArray data)
             return nullptr;
 
         return std::move(pair.second);
-    } catch (const nbt::io::input_error& e) {
+    } catch (const std::exception& e) {
+        // Not only input_error: the parser sets aside as much as the lengths in the data claim, which can fail too.
         qWarning() << "Unable to parse level.dat:" << e.what();
         return nullptr;
     }
@@ -344,14 +347,10 @@ bool World::rename(const QString& newName)
     }
 
     auto worldData = parseLevelDat(data);
-    if (!worldData) {
+    if (!worldData || !worldData->has_key("Data", nbt::tag_type::Compound)) {
         return false;
     }
-    auto& val = worldData->at("Data");
-    if (val.get_type() != nbt::tag_type::Compound) {
-        return false;
-    }
-    auto& dataCompound = val.as<nbt::tag_compound>();
+    auto& dataCompound = worldData->at("Data").as<nbt::tag_compound>();
     dataCompound.put("LevelName", nbt::value_initializer(newName.toUtf8().data()));
     data = serializeLevelDat(worldData.get());
 

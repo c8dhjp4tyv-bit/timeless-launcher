@@ -88,6 +88,25 @@ class GZipTest : public QObject {
                  QString());
         QCOMPARE(read, lines.first(10));
     }
+
+    void unzipStopsAtItsLimit()
+    {
+        // Zeros, which a few kilobytes of gzip inflate to a megabyte of, as a few megabytes do to gigabytes
+        const QByteArray zeros(1024 * 1024 + 1, '\0');
+        QByteArray compressed;
+        QVERIFY(GZip::zip(zeros, compressed));
+
+        QByteArray inflated;
+        QVERIFY(!GZip::unzip(compressed, inflated, zeros.size() - 1));
+        QVERIFY(inflated.isEmpty());
+
+        QVERIFY(GZip::unzip(compressed, inflated, zeros.size()));
+        QCOMPARE(inflated, zeros);
+
+        // and cut short, it doesn't inflate at all
+        QVERIFY(!GZip::unzip(compressed.first(compressed.size() / 2), inflated));
+        QVERIFY(inflated.isEmpty());
+    }
 };
 
 QTEST_GUILESS_MAIN(GZipTest)

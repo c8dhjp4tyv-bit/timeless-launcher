@@ -16,6 +16,7 @@
  */
 
 #include <QCoreApplication>
+#include <QDataStream>
 #include <QEventLoop>
 #include <QRegularExpression>
 #include <QTemporaryDir>
@@ -23,6 +24,7 @@
 #include <QThreadPool>
 #include <QTimer>
 
+#include <limits>
 #include <sstream>
 
 #include <io/stream_writer.h>
@@ -357,6 +359,52 @@ class WorldTest : public QObject {
         QVERIFY(backups.at(2).automatic);
 
         QVERIFY(WorldBackups::allBackupsOf(saves, "Nothing").isEmpty());
+    }
+
+    void levelDatClaimingAHugeList()
+    {
+        // A level.dat with a list that claims two billion entries and holds none, as a damaged or made up one can. The
+        // parser sets aside room for all of them before it reads any, which can fail for lack of memory. Written by hand,
+        // since a list can't be made to claim more than it holds.
+        QByteArray raw;
+        QDataStream out(&raw, QIODevice::WriteOnly);
+        out << quint8(10) << quint16(0);  // the compound around everything, without a name
+        out << quint8(10) << quint16(4);
+        out.writeRawData("Data", 4);
+        out << quint8(9) << quint16(4);
+        out.writeRawData("Mods", 4);
+        out << quint8(3) << std::numeric_limits<qint32>::max();  // of ints
+
+        const QTemporaryDir saves;
+        QVERIFY(saves.isValid());
+        const auto folder = saves.filePath("World");
+        QByteArray compressed;
+        QVERIFY(GZip::zip(raw, compressed));
+        FS::write(FS::PathCombine(folder, "level.dat"), compressed);
+
+        World world{ QFileInfo(folder) };
+        world.loadMetadata();
+        QVERIFY(!world.isValid());
+    }
+
+    void renameWithoutLevelData()
+    {
+        // a level.dat that can be read, but doesn't have the Data the world's name is in
+        nbt::tag_compound root;
+        root.put("Other", nbt::tag_int(1));
+        std::ostringstream stream;
+        nbt::io::write_tag("", root, stream);
+        QByteArray compressed;
+        QVERIFY(GZip::zip(QByteArray::fromStdString(stream.str()), compressed));
+
+        const QTemporaryDir saves;
+        QVERIFY(saves.isValid());
+        const auto folder = saves.filePath("World");
+        FS::write(FS::PathCombine(folder, "level.dat"), compressed);
+
+        World world{ QFileInfo(folder) };
+        QVERIFY(!world.rename("Renamed"));
+        QCOMPARE(FS::read(FS::PathCombine(folder, "level.dat")), compressed);
     }
 };
 
