@@ -181,6 +181,48 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
         }
     }
 
+    // Native libraries, LWJGL's mostly, built for another kind of processor than Java. Windows and Linux report it through Java,
+    // which names both (Java 8 wrote "AMD 64-bit" where later ones write "AMD 64", and newer ones name only the word width when
+    // that differs), and macOS through its loader, which names what the file has and what the process needs.
+    static const QRegularExpression s_nativeForOtherProcessor(
+        R"(can't load ([\w ]+?)(?:-bit)? \.(?:dll|so) on a ([\w ]+?)(?:-bit)? platform)", QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression s_nativeForOtherMac(R"(incompatible architecture \(have '(\w+)', need '(\w+)')");
+    const auto processorName = [](const QString& name) {
+        const auto key = name.toLower().remove(' ').remove('_').remove('-');
+        if (key == "amd64" || key == "x8664") {
+            return tr("64-bit Intel and AMD processors (x86-64)");
+        }
+        if (key == "ia32" || key == "i386" || key == "x86") {
+            return tr("32-bit Intel and AMD processors (x86)");
+        }
+        if (key == "aarch64" || key == "arm64" || key == "arm64e") {
+            return tr("64-bit ARM processors (arm64)");
+        }
+        if (key == "arm") {
+            return tr("32-bit ARM processors");
+        }
+        if (key == "64" || key == "32") {
+            return tr("%1-bit processors").arg(key);
+        }
+        return name;
+    };
+    const auto nativeForOther = s_nativeForOtherProcessor.match(log);
+    const auto nativeForOtherMac = s_nativeForOtherMac.match(log);
+    if (const auto& found = nativeForOther.hasMatch() ? nativeForOther : nativeForOtherMac; found.hasMatch()) {
+        const auto libraries = processorName(found.captured(1));
+        auto hint = tr("Java can't load the game's native libraries: they are built for %1, and this Java for %2. Pick a Java built "
+                       "for %1 in the Java tab of this instance's settings.")
+                        .arg(libraries, processorName(found.captured(2)));
+        if (!nativeForOther.hasMatch() && libraries == processorName("x86_64")) {
+            hint += ' ' + tr("On a Mac with an Apple chip, macOS runs such a Java through Rosetta 2.");
+        }
+        hints << hint;
+    } else if (log.contains("architecture word width mismatch")) {
+        hints << tr(
+            "Java can't load the game's native libraries, because one is 32-bit and the other 64-bit. A 32-bit Java can't "
+            "load 64-bit libraries, so pick a 64-bit Java in the Java tab of this instance's settings.");
+    }
+
     // Mods the mod loader can't load, as it explains it
 
     // A mod file Fabric can't read as a jar at all, as after a download that was cut short. It names the files it was looking at,
