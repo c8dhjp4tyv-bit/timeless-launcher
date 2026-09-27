@@ -90,6 +90,11 @@ class ModFolderModel : public ResourceFolderModel {
     bool isValid();
 
     bool setResourceEnabled(const QModelIndexList& indexes, EnableAction action) override;
+    /**
+     * Enables or disables exactly these mods, without asking about the mods they need or the mods that need them, or whether to
+     * go ahead while the instance is running
+     */
+    bool setModsEnabled(const QModelIndexList& indexes, EnableAction action);
     bool deleteResources(const QModelIndexList& indexes) override;
 
     QModelIndexList getAffectedMods(const QModelIndexList& indexes, EnableAction action);
@@ -98,13 +103,37 @@ class ModFolderModel : public ResourceFolderModel {
 
    public:
     QStringList requiresList(const QString& id) const;
+    /** The mods in this folder that the mod with that ID needs */
+    QList<Mod*> requiredMods(const QString& id) const;
     QStringList requiredByList(const QString& id) const;
+
+    /**
+     * The file names of the other enabled mods that have the same mod ID as the given one and are read by the same
+     * loader. Mod loaders refuse to start with two copies of a mod, so every one of them but one has to go.
+     */
+    QStringList duplicatesOf(const QString& internalId) const { return m_duplicates.value(internalId); }
+
+    /** The file names of each set of enabled mods that share a mod ID and would all be read by one of these loaders */
+    QList<QStringList> duplicateGroups(ModPlatform::ModLoaderTypes loaders);
+    /**
+     * Of each set that duplicateGroups() gives, the file names of every copy but the one to keep, which is the one with the latest
+     * version, or among those with the same version, the file changed last
+     */
+    QStringList olderDuplicates(ModPlatform::ModLoaderTypes loaders);
+
+    /** The file names of the enabled mods Java can't open, as when their download was cut short, which stop the mod loader too */
+    QStringList damagedMods();
 
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;
     void onParseFinished();
+    void onUpdateSucceeded() override;
 
    private:
+    void updateDuplicates();
+
     QHash<QString, QSet<Mod*>> m_requiredBy;
     QHash<QString, QSet<Mod*>> m_requires;
+    // internal ID -> file names of its duplicates
+    QHash<QString, QStringList> m_duplicates;
 };

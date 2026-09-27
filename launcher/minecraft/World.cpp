@@ -47,6 +47,7 @@
 #include <tag_string.h>
 #include <sstream>
 #include "GZip.h"
+#include "NbtSizeCheck.h"
 
 #include <QCoreApplication>
 
@@ -124,8 +125,14 @@ QString GameType::toLogString() const
 
 std::unique_ptr<nbt::tag_compound> parseLevelDat(QByteArray data)
 {
+    // Far more than any level.dat holds. One that inflates to more is damaged, or made to use up the memory it's read into.
+    constexpr qsizetype maxLevelDatSize = qsizetype{ 64 } * 1024 * 1024;
     QByteArray output;
-    if (!GZip::unzip(data, output)) {
+    if (!GZip::unzip(data, output, maxLevelDatSize)) {
+        return nullptr;
+    }
+    if (!NbtSizeCheck::fits(output)) {
+        qWarning() << "Unable to parse level.dat: it is damaged, or claims more than it holds";
         return nullptr;
     }
     std::istringstream foo(std::string(output.constData(), output.size()));
@@ -139,7 +146,8 @@ std::unique_ptr<nbt::tag_compound> parseLevelDat(QByteArray data)
             return nullptr;
 
         return std::move(pair.second);
-    } catch (const nbt::io::input_error& e) {
+    } catch (const std::exception& e) {
+        // Not only input_error: the parser sets aside as much as the lengths in the data claim, which can fail too.
         qWarning() << "Unable to parse level.dat:" << e.what();
         return nullptr;
     }
@@ -301,27 +309,45 @@ void World::readFromZip(const QFileInfo& file)
 
 bool World::install(const QString& to, const QString& name)
 {
-    auto finalPath = FS::PathCombine(to, FS::DirNameFromString(m_actualName, to));
+    // The world's name, which its folder is named after, and where in a zip its level.dat sits both come from the
+    // metadata, which a freshly constructed World hasn't read yet.
+    loadMetadata();
+    if (!m_isValid) {
+        return false;
+    }
+
+    // a folder of its own that isn't there yet, which is what makes removing it again below safe
+    const auto folderName = FS::DirNameFromString(m_actualName, to);
+    if (folderName.isEmpty()) {
+        return false;
+    }
+    auto finalPath = FS::PathCombine(to, folderName);
     if (!FS::ensureFolderPathExists(finalPath)) {
         return false;
     }
     bool ok = false;
     if (m_containerFile.isFile()) {
         MMCZip::ArchiveReader zip(m_containerFile.absoluteFilePath());
-        ok = !MMCZip::extractSubDir(&zip, m_containerOffsetPath, finalPath);
+        // nullopt means the extraction failed, a list (even an empty one) that it worked
+        ok = MMCZip::extractSubDir(&zip, m_containerOffsetPath, finalPath).has_value();
     } else if (m_containerFile.isDir()) {
         QString from = m_containerFile.filePath();
         ok = FS::copy(from, finalPath)();
     }
+    if (!ok) {
+        // what got there before the failure, as the start of a zip that was cut short, is no world the game could open
+        FS::deletePath(finalPath);
+        return false;
+    }
 
-    if (ok && !name.isEmpty() && m_actualName != name) {
+    if (!name.isEmpty() && m_actualName != name) {
         QFileInfo finalPathInfo(finalPath);
         World newWorld(finalPathInfo);
         if (newWorld.isValid()) {
             newWorld.rename(name);
         }
     }
-    return ok;
+    return true;
 }
 
 bool World::rename(const QString& newName)
@@ -336,14 +362,10 @@ bool World::rename(const QString& newName)
     }
 
     auto worldData = parseLevelDat(data);
-    if (!worldData) {
+    if (!worldData || !worldData->has_key("Data", nbt::tag_type::Compound)) {
         return false;
     }
-    auto& val = worldData->at("Data");
-    if (val.get_type() != nbt::tag_type::Compound) {
-        return false;
-    }
-    auto& dataCompound = val.as<nbt::tag_compound>();
+    auto& dataCompound = worldData->at("Data").as<nbt::tag_compound>();
     dataCompound.put("LevelName", nbt::value_initializer(newName.toUtf8().data()));
     data = serializeLevelDat(worldData.get());
 

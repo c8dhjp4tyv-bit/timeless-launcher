@@ -76,8 +76,10 @@ void FlamePackExportTask::collectFiles()
     pendingHashes.clear();
     resolvedFiles.clear();
 
+    // once: a later refresh of the mod list must not start hashing and zipping all over again
+    connect(m_options.instance->loaderModList(), &ModFolderModel::updateFinished, this, &FlamePackExportTask::collectHashes,
+            Qt::SingleShotConnection);
     m_options.instance->loaderModList()->update();
-    connect(m_options.instance->loaderModList(), &ModFolderModel::updateFinished, this, &FlamePackExportTask::collectHashes);
 }
 
 void FlamePackExportTask::collectHashes()
@@ -204,9 +206,9 @@ void FlamePackExportTask::makeApiRequest()
                 auto fileObj = matchObj["file"].toObject();
 
                 if (matchObj.isEmpty() || fileObj.isEmpty()) {
+                    // returning here would leave the export running forever
                     qWarning() << "Fingerprint match is empty!";
-
-                    return;
+                    continue;
                 }
 
                 auto fingerprint = QString::number(fileObj["fileFingerprint"].toInteger());

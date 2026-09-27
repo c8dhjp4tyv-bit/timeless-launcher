@@ -19,7 +19,11 @@
 
 #include <QDateTime>
 #include <QObject>
-#include <QTextStream>
+#include <QStringList>
+
+#include <chrono>
+#include <cmath>
+#include <limits>
 
 QString Time::prettifyDuration(int64_t duration, bool noDays)
 {
@@ -42,8 +46,11 @@ QString Time::humanReadableDuration(double duration, int precision)
 {
     using days = std::chrono::duration<int, std::ratio<86400>>;
 
-    QString outStr;
-    QTextStream os(&outStr);
+    // A transfer that has not received anything yet has an infinite ETA. Converting that, or anything too long for the
+    // day count, to the integer durations below is undefined and printed values like "-2147483648days".
+    if (!std::isfinite(duration) || std::abs(duration) / days::period::num >= std::numeric_limits<days::rep>::max()) {
+        return QStringLiteral("∞");
+    }
 
     bool neg = false;
     if (duration < 0) {
@@ -68,34 +75,23 @@ QString Time::humanReadableDuration(double duration, int precision)
     auto sc = s.count();
     auto msc = ms.count();
 
-    if (neg) {
-        os << '-';
-    }
+    // Each part is a number with its unit right after it, and the parts are separated by one space: "1d 2h 3m 4s".
+    QStringList parts;
     if (dc) {
-        os << dc << QObject::tr("days");
+        parts << QString::number(dc) + QObject::tr("d");  // days
     }
     if (hc) {
-        if (dc)
-            os << " ";
-        os << qSetFieldWidth(2) << hc << QObject::tr("h");  // hours
+        parts << QString::number(hc) + QObject::tr("h");  // hours
     }
     if (mc) {
-        if (dc || hc)
-            os << " ";
-        os << qSetFieldWidth(2) << mc << QObject::tr("m");  // minutes
+        parts << QString::number(mc) + QObject::tr("m");  // minutes
     }
-    if (dc || hc || mc || sc) {
-        if (dc || hc || mc)
-            os << " ";
-        os << qSetFieldWidth(2) << sc << QObject::tr("s");  // seconds
+    if (sc) {
+        parts << QString::number(sc) + QObject::tr("s");  // seconds
     }
-    if ((msc && (precision > 0)) || !(dc || hc || mc || sc)) {
-        if (dc || hc || mc || sc)
-            os << " ";
-        os << qSetFieldWidth(0) << qSetRealNumberPrecision(precision) << msc << QObject::tr("ms");  // miliseconds
+    if ((msc && (precision > 0)) || parts.isEmpty()) {
+        parts << QString::number(msc) + QObject::tr("ms");  // milliseconds
     }
 
-    os.flush();
-
-    return outStr;
+    return (neg ? QStringLiteral("-") : QString()) + parts.join(' ');
 }

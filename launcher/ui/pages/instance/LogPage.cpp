@@ -82,6 +82,18 @@ QVariant LogFormatProxyModel::data(const QModelIndex& index, int role) const
     return QIdentityProxyModel::data(index, role);
 }
 
+MessageLevel lowestLevelShown(int choice)
+{
+    switch (choice) {
+        case 1:
+            return MessageLevel::Warning;
+        case 2:
+            return MessageLevel::Error;
+        default:
+            return MessageLevel::Unknown;
+    }
+}
+
 QModelIndex LogFormatProxyModel::find(const QModelIndex& start, const QString& value, bool reverse) const
 {
     QModelIndex parentIndex = parent(start);
@@ -295,6 +307,11 @@ void LogPage::on_colorCheckbox_clicked(bool checked)
     if (!m_model)
         return;
     m_model->setColorLines(checked);
+}
+
+void LogPage::on_levelFilterBox_currentIndexChanged(int index)
+{
+    ui->text->setMinimumLevel(lowestLevelShown(index));
 }
 
 void LogPage::on_findButton_clicked()

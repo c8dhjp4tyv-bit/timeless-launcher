@@ -36,6 +36,8 @@ class LogParser {
         QDateTime timestamp;
         QString thread;
         QString message;
+        /// The exception logged with the message and its stack trace, if there was one
+        QString throwable;
     };
     struct Partial {
         QString data;

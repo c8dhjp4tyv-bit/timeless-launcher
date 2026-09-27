@@ -101,6 +101,7 @@ Task::Ptr ResourceAPI::getProjectVersions(const VersionSearchArgs& args,
             qWarning() << "Error while parsing JSON response for getting versions at" << parseError.offset
                        << "reason:" << parseError.errorString();
             qWarning() << *response;
+            callbacks.onFail(parseError.errorString(), -1);
             return;
         }
 
@@ -169,6 +170,7 @@ Task::Ptr ResourceAPI::getProjectInfo(const ProjectInfoArgs& args,
         if (parseError.error != QJsonParseError::NoError) {
             qWarning() << "Error while parsing JSON response for mod info at" << parseError.offset << "reason:" << parseError.errorString();
             qWarning() << *response;
+            callbacks.onFail(parseError.errorString(), -1);
             return;
         }
         try {
@@ -227,6 +229,7 @@ Task::Ptr ResourceAPI::getDependencyVersion(const DependencySearchArgs& args, co
             qWarning() << "Error while parsing JSON response for getting dependency version at" << parseError.offset
                        << "reason:" << parseError.errorString();
             qWarning() << *response;
+            callbacks.onFail(parseError.errorString(), -1);
             return;
         }
 

@@ -56,6 +56,8 @@
 #include "launch/steps/TextPrint.h"
 
 #include "minecraft/launch/AutoInstallJava.h"
+#include "minecraft/launch/BackupWorlds.h"
+#include "minecraft/launch/CheckModFiles.h"
 #include "minecraft/launch/ClaimAccount.h"
 #include "minecraft/launch/CreateGameFolders.h"
 #include "minecraft/launch/EnsureAvailableMemory.h"
@@ -233,6 +235,12 @@ void MinecraftInstance::loadSpecificSettings()
         auto miscellaneousOverride = m_settings->registerSetting("OverrideMiscellaneous", false);
         m_settings->registerOverride(global_settings->getSetting("CloseAfterLaunch"), miscellaneousOverride);
         m_settings->registerOverride(global_settings->getSetting("QuitAfterGameStop"), miscellaneousOverride);
+
+        // World backups
+        auto worldBackupsOverride = m_settings->registerSetting("OverrideWorldBackups", false);
+        m_settings->registerOverride(global_settings->getSetting("BackUpWorldsBeforeUpdate"), worldBackupsOverride);
+        m_settings->registerOverride(global_settings->getSetting("BackUpWorldsBeforeLaunch"), worldBackupsOverride);
+        m_settings->registerOverride(global_settings->getSetting("WorldBackupsToKeep"), worldBackupsOverride);
 
         // Legacy-related options
         auto legacySettings = m_settings->registerSetting("OverrideLegacySettings", false);
@@ -1217,9 +1225,19 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
         process->appendStep(makeShared<ScanModFolders>(pptr));
     }
 
+    // damaged mod files and two copies of one mod stop the game from starting, so say so before it gets that far
+    {
+        process->appendStep(makeShared<CheckModFiles>(pptr));
+    }
+
     // make sure we have enough RAM, warn the user if we don't
     {
         process->appendStep(makeShared<EnsureAvailableMemory>(pptr, this));
+    }
+
+    // back up the worlds played since their last backup, after the checks that may call the launch off
+    {
+        process->appendStep(makeShared<BackupWorlds>(pptr));
     }
 
     // print some instance info here...

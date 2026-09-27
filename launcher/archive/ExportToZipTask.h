@@ -21,6 +21,7 @@
 #include <QFileInfoList>
 #include <QFuture>
 #include <QFutureWatcher>
+#include <atomic>
 
 #include "archive/ArchiveWriter.h"
 #include "tasks/Task.h"
@@ -44,6 +45,7 @@ class ExportToZipTask : public Task {
 
     virtual ~ExportToZipTask() = default;
 
+    QString outputPath() const { return m_outputPath; }
     void setExcludeFiles(QStringList excludeFiles) { m_excludeFiles = excludeFiles; }
     void addExtraFile(QString fileName, QByteArray data) { m_extraFiles.insert(fileName, data); }
 
@@ -68,5 +70,8 @@ class ExportToZipTask : public Task {
 
     QFuture<ZipResult> m_buildZipFuture;
     QFutureWatcher<ZipResult> m_buildZipWatcher;
+    // What the worker checks to stop early. It can't ask m_buildZipFuture: that is only assigned once QtConcurrent::run has
+    // returned, so the worker may get to it first, and until then it reads as canceled.
+    std::atomic_bool m_abortRequested{ false };
 };
 }  // namespace MMCZip

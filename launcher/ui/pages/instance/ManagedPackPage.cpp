@@ -13,6 +13,7 @@
 #include <QFileDialog>
 #include <memory>
 
+#include <QDir>
 #include "Application.h"
 #include "InstanceImportTask.h"
 #include "InstanceList.h"
@@ -20,6 +21,7 @@
 #include "Markdown.h"
 #include "StringUtils.h"
 
+#include "ui/GuiUtil.h"
 #include "ui/InstanceWindow.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/ProgressDialog.h"
@@ -282,10 +284,14 @@ void ManagedPackPage::onUpdateTaskCompleted(bool didSucceed) const
             m_instanceWindow->close();
         }
 
-        CustomMessageBox::selectable(nullptr, tr("Update Successful"),
-                                     tr("The instance updated to pack version %1 successfully.").arg(m_inst->getManagedPackVersionName()),
-                                     QMessageBox::Information)
-            ->show();
+        // a pack updated from a file may not say which version it is
+        const auto version = m_inst->getManagedPackVersionName();
+        auto message = version.isEmpty() ? tr("The instance was updated successfully.")
+                                         : tr("The instance updated to pack version %1 successfully.").arg(version);
+        if (!m_worldsBackedUpTo.isEmpty()) {
+            message += "\n\n" + tr("Its worlds were backed up to %1 first.").arg(m_worldsBackedUpTo);
+        }
+        CustomMessageBox::selectable(nullptr, tr("Update Successful"), message, QMessageBox::Information)->show();
     } else {
         CustomMessageBox::selectable(
             nullptr, tr("Update Failed"),
@@ -453,8 +459,17 @@ void FlameManagedPackPage::updateFromFile()
     updatePack(output, false);
 }
 
+bool ManagedPackPage::backUpWorlds()
+{
+    return GuiUtil::backUpWorldsBeforeUpdate(m_inst, this, &m_worldsBackedUpTo);
+}
+
 void ManagedPackPage::updatePack(const QUrl& url, bool trusted, const QString& versionID, const QString& versionName)
 {
+    if (!backUpWorlds()) {
+        return;
+    }
+
     QMap<QString, QString> extraInfo;
     // NOTE: Don't use 'm_pack.id' here, since we didn't completely parse all the metadata for the pack, including this field.
     extraInfo.insert("pack_id", m_inst->getManagedPackID());

@@ -38,10 +38,17 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 
+#include <algorithm>
+
 #include "Application.h"
 #include "FileSystem.h"
+#include "java/JavaVersion.h"
 #include "launch/LaunchTask.h"
+#include "logs/CrashHints.h"
 #include "minecraft/MinecraftInstance.h"
+#include "minecraft/PackProfile.h"
+#include "minecraft/mod/Mod.h"
+#include "minecraft/mod/ModFolderModel.h"
 
 #ifdef Q_OS_LINUX
 #include "gamemode_client.h"
@@ -172,6 +179,9 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
         case LoggedProcess::Crashed: {
             m_parent->setPid(-1);
             m_parent->instance()->setMinecraftRunning(false);
+            if (state == LoggedProcess::Crashed) {
+                logCrashHints();
+            }
             emitFailed(tr("Game crashed."));
             return;
         }
@@ -186,6 +196,7 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
             // if the exit code wasn't 0, report this as a crash
             auto exitCode = m_process.exitCode();
             if (exitCode != 0) {
+                logCrashHints();
                 emitFailed(tr("Game crashed."));
                 return;
             }
@@ -206,6 +217,29 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
             break;
         default:
             break;
+    }
+}
+
+void LauncherPartLaunch::logCrashHints()
+{
+    auto* instance = m_parent->instance();
+    const JavaVersion javaVersion(instance->settings()->get("JavaVersion").toString());
+    const auto hints = CrashHints::find(m_parent->getLogModel()->toPlainText(), javaVersion.major());
+    if (!hints.isEmpty()) {
+        emit logLine(tr("The log points to what went wrong:"), MessageLevel::Launcher);
+        for (const auto& hint : hints) {
+            emit logLine("  - " + hint, MessageLevel::Launcher);
+        }
+        return;
+    }
+
+    // without a known cause, a mod may still be behind it
+    const auto mods = instance->loaderModList()->allMods();
+    if (instance->getPackProfile()->getModLoaders().has_value() &&
+        std::ranges::any_of(mods, [](const Mod* mod) { return mod->enabled(); })) {
+        emit logLine(tr("No known cause of this was found in the log. If it comes from a mod, Find Problem Mod on the Mods page can "
+                        "find which one."),
+                     MessageLevel::Launcher);
     }
 }
 

@@ -168,7 +168,16 @@ void BaseEntityLoadTask::executeTask()
     dl->addValidator(new ParsingValidator(m_entity));
     m_task->addNetAction(dl);
     m_task->setAskRetry(false);
-    connect(m_task.get(), &Task::failed, this, &BaseEntityLoadTask::emitFailed);
+    connect(m_task.get(), &Task::failed, this, [this](const QString& reason) {
+        // A good copy from an earlier download still describes the game, so an unreachable server doesn't have to stop
+        // anything from starting. Only an explicit refresh has to fail when it can't get anything newer.
+        if (m_entity->m_load_status == BaseEntity::LoadStatus::Local && !m_force_reload) {
+            qWarning() << "Couldn't refresh" << m_entity->localFilename() << "so the cached copy is used:" << reason;
+            emitSucceeded();
+            return;
+        }
+        emitFailed(reason);
+    });
     connect(m_task.get(), &Task::succeeded, this, [this]() {
         m_entity->m_load_status = BaseEntity::LoadStatus::Remote;
         m_entity->m_file_sha256 = m_entity->m_sha256;

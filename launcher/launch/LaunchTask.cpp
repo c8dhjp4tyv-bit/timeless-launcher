@@ -246,11 +246,11 @@ bool LaunchTask::parseXmlLogs(const QString& line, MessageLevel level)
         if (std::holds_alternative<LogParser::LogEntry>(item)) {
             auto entry = std::get<LogParser::LogEntry>(item);
             auto msg = QString("[%1] [%2/%3] [%4]: %5")
-                           .arg(entry.timestamp.toString("HH:mm:ss"))
-                           .arg(entry.thread)
-                           .arg(entry.levelText)
-                           .arg(entry.logger)
-                           .arg(entry.message);
+                           .arg(entry.timestamp.toString("HH:mm:ss"), entry.thread, entry.levelText, entry.logger, entry.message);
+            if (!entry.throwable.isEmpty()) {
+                // on the lines below, as in the game's own log
+                msg += '\n' + entry.throwable;
+            }
             msg = censorPrivateInfo(msg);
             model->append(entry.level, msg);
         } else if (std::holds_alternative<LogParser::PlainText>(item)) {

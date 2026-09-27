@@ -21,6 +21,7 @@
 #include "modplatform/ModIndex.h"
 #include "settings/INISettingsObject.h"
 
+#include "ui/GuiUtil.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/UntrustedModsDialog.h"
 #include "ui/pages/modplatform/OptionalModDialog.h"
@@ -28,7 +29,64 @@
 #include <QAbstractButton>
 #include <QFileInfo>
 #include <QHash>
+#include <QRegularExpression>
+#include <optional>
 #include <vector>
+
+namespace {
+
+/// The Modrinth project a file of a pack comes from, going by its download addresses: /data/<project>/versions/...
+QString modrinthProject(const QQueue<QUrl>& downloads)
+{
+    static const QRegularExpression s_project(R"(^/data/([^/]+)/versions/)");
+    for (const auto& url : downloads) {
+        if (const auto match = s_project.match(url.path()); match.hasMatch()) {
+            return match.captured(1);
+        }
+    }
+    return {};
+}
+
+QString withoutDisabled(const QString& path)
+{
+    return path.endsWith(".disabled") ? path.chopped(9) : path;
+}
+
+}  // namespace
+
+void ModrinthCreationTask::keepEnabledStates(const std::vector<File>& installed, std::vector<File>& update, const QDir& gameRoot)
+{
+    // whether the player has each installed file on, by its project and by its path
+    QHash<QString, bool> enabledByProject;
+    QHash<QString, bool> enabledByPath;
+    for (const auto& file : installed) {
+        const auto path = withoutDisabled(file.path);
+        bool enabled = false;
+        if (QFileInfo::exists(gameRoot.filePath(path))) {
+            enabled = true;
+        } else if (!QFileInfo::exists(gameRoot.filePath(path + ".disabled"))) {
+            continue;
+        }
+        if (const auto project = modrinthProject(file.downloads); !project.isEmpty()) {
+            enabledByProject.insert(project, enabled);
+        }
+        enabledByPath.insert(path, enabled);
+    }
+
+    for (auto& file : update) {
+        const auto path = withoutDisabled(file.path);
+        const auto project = modrinthProject(file.downloads);
+        std::optional<bool> enabled;
+        if (enabledByProject.contains(project)) {
+            enabled = enabledByProject.value(project);
+        } else if (enabledByPath.contains(path)) {
+            enabled = enabledByPath.value(path);
+        }
+        if (enabled.has_value()) {
+            file.path = *enabled ? path : path + ".disabled";
+        }
+    }
+}
 
 bool ModrinthCreationTask::abort()
 {
@@ -83,6 +141,11 @@ void ModrinthCreationTask::executeTask()
             emitAborted();
             return;
         }
+        // updating from the pack's page has backed up the worlds already
+        if (!GuiUtil::backUpWorldsBeforeUpdate(inst, m_parent)) {
+            emitAborted();
+            return;
+        }
     }
 
     // Remove repeated files, we don't need to download them!
@@ -122,6 +185,10 @@ void ModrinthCreationTask::executeTask()
 
         QDir oldMinecraftDir(inst->gameRoot());
 
+        // the new versions of mods and other files are left on or off as the player has the ones they replace, whether the
+        // player turned off one of the pack's mods or turned on an optional one
+        keepEnabledStates(oldFiles, m_files, oldMinecraftDir);
+
         // Some files were removed from the old version, and some will be downloaded in an updated version,
         // so we're fine removing them!
         if (!oldFiles.empty()) {
@@ -131,16 +198,16 @@ void ModrinthCreationTask::executeTask()
         }
 
         // We will remove all the previous overrides, to prevent duplicate files!
-        // TODO: Currently 'overrides' will always override the stuff on update. How do we preserve unchanged overrides?
-        // FIXME: We may want to do something about disabled mods.
+        // The player's changes to the ones the update leaves as they were are put back once its overrides are in place.
+        // The player may have turned off a mod among them, so that copy goes too, and the update's is turned off in turn.
         auto oldOverrides = Override::readOverrides("overrides", oldIndexFolder);
         for (const auto& entry : oldOverrides) {
-            scheduleToDelete(m_parent, oldMinecraftDir, entry);
+            scheduleToDelete(m_parent, oldMinecraftDir, entry, true);
         }
 
         auto oldClientOverrides = Override::readOverrides("client-overrides", oldIndexFolder);
         for (const auto& entry : oldClientOverrides) {
-            scheduleToDelete(m_parent, oldMinecraftDir, entry);
+            scheduleToDelete(m_parent, oldMinecraftDir, entry, true);
         }
     } else {
         // We don't have an old index file, so we may duplicate stuff!
@@ -204,6 +271,18 @@ void ModrinthCreationTask::createInstance()
             emitFailed(tr("Could not rename the client overrides folder:\n") + "client overrides");
             return;
         }
+    }
+
+    // an update keeps the player's changes to the files it leaves as they were, the player's game options, and the mods the pack
+    // comes with on or off as the player has them
+    const auto* oldInstance = m_oldInstance.value_or(nullptr);
+    const auto oldGameRoot = oldInstance ? oldInstance->gameRoot() : QString();
+    const auto oldPackFolder = oldInstance ? FS::PathCombine(oldInstance->instanceRoot(), "mrpack") : QString();
+    const auto overrides = Override::readOverrides("overrides", parentFolder) + Override::readOverrides("client-overrides", parentFolder);
+    Override::keepPlayerChanges(mcPath, parentFolder, overrides, oldGameRoot, oldPackFolder);
+    Override::keepGameOptions(mcPath, parentFolder, oldGameRoot, oldPackFolder);
+    if (oldInstance != nullptr) {
+        Override::keepEnabledStates(mcPath, overrides, oldGameRoot);
     }
 
     if (!promptForUntrustedMods()) {
@@ -430,7 +509,7 @@ bool ModrinthCreationTask::parseManifest(const QString& indexPath, std::vector<F
                 }
             }
         } else {
-            throw JSONValidationError(QStringLiteral("Unknown format version: %s").arg(formatVersion));
+            throw JSONValidationError(QStringLiteral("Unknown format version: %1").arg(formatVersion));
         }
 
     } catch (const JSONValidationError& e) {

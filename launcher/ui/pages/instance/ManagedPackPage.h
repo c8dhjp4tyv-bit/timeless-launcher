@@ -86,6 +86,11 @@ class ManagedPackPage : public QWidget, public BasePage {
 
     void updatePack(const QUrl& url, bool trusted, const QString& versionID = {}, const QString& versionName = {});
 
+    /** Backs up every world of the instance before an update changes its mods, if the settings say to.
+     *  Returns whether to go ahead with the update.
+     */
+    bool backUpWorlds();
+
     void onUpdateTaskCompleted(bool didSucceed) const;
 
    protected:
@@ -95,6 +100,8 @@ class ManagedPackPage : public QWidget, public BasePage {
     BaseInstance* m_inst;
 
     bool m_loaded = false;
+    /// Where the worlds were backed up to before the update, if they were
+    QString m_worldsBackedUpTo;
 };
 
 /** Simple page for when we aren't a managed pack. */

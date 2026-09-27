@@ -328,8 +328,6 @@ bool copy::operator()(const QString& offset, bool dryRun)
     auto src = PathCombine(m_src.absolutePath(), offset);
     auto dst = PathCombine(m_dst.absolutePath(), offset);
 
-    std::error_code err;
-
     fs::copy_options opt = copy_opts::none;
 
     // The default behavior is to follow symlinks
@@ -340,11 +338,13 @@ bool copy::operator()(const QString& offset, bool dryRun)
         opt |= copy_opts::overwrite_existing;
 
     // Function that'll do the actual copying
-    auto copy_file = [this, dryRun, src, dst, opt, &err](QString src_path, QString relative_dst_path) {
+    auto copy_file = [this, dryRun, src, dst, opt](QString src_path, QString relative_dst_path) {
         if (m_matcher && (m_matcher(relative_dst_path) != m_whitelist))
             return;
 
         auto dst_path = PathCombine(dst, relative_dst_path);
+        // per entry, so that one failure isn't also reported for the directories that are skipped after it
+        std::error_code err;
         if (!dryRun) {
             auto srcStdPath = StringUtils::toStdString(src_path);
 #ifdef Q_OS_WIN32
@@ -451,7 +451,8 @@ bool copy::operator()(const QString& offset, bool dryRun)
     }
 #endif
 
-    return err.value() == 0 && !thereWereErrors;
+    // any entry that failed fails the copy, not just the one that happened to be copied last
+    return m_failedPaths.isEmpty() && !thereWereErrors;
 }
 
 /// qDebug print support for the LinkPair struct
@@ -1018,6 +1019,34 @@ QString quoteArgs(const QStringList& args, const QString& wrap, const QString& e
     return result;
 }
 
+QString desktopEntryExec(const QString& program, const QStringList& args)
+{
+    QStringList quoted;
+    for (auto arg : QStringList{ program } + args) {
+        // In double quotes, which leave a single quote alone, a backslash goes before these
+        for (const QChar c : { '\\', '"', '`', '$' }) {
+            arg.replace(c, QString('\\') + c);
+        }
+        arg = '"' + arg + '"';
+        // % starts a field code
+        arg.replace('%', "%%");
+        // and the value is a string, whose backslashes need one more each
+        arg.replace('\\', "\\\\");
+        quoted << arg;
+    }
+    return quoted.join(' ');
+}
+
+QString shellCommand(const QString& program, const QStringList& args)
+{
+    QStringList quoted;
+    for (auto arg : QStringList{ program } + args) {
+        // nothing is special in single quotes, and a single quote ends them
+        quoted << '\'' + arg.replace('\'', "'\\''") + '\'';
+    }
+    return quoted.join(' ');
+}
+
 // Cross-platform Shortcut creation
 QString createShortcut(QString destination, QString target, QStringList args, QString name, QString icon)
 {
@@ -1067,10 +1096,8 @@ QString createShortcut(QString destination, QString target, QStringList args, QS
     }
     QTextStream stream(&f);
 
-    auto argstring = quoteArgs(args, "\"", "\\\"");
-
     stream << "#!/bin/bash" << "\n";
-    stream << "\"" << target << "\" " << argstring << "\n";
+    stream << shellCommand(target, args) << "\n";
 
     stream.flush();
     f.close();
@@ -1112,12 +1139,10 @@ QString createShortcut(QString destination, QString target, QStringList args, QS
     }
     QTextStream stream(&f);
 
-    auto argstring = quoteArgs(args, "'", "'\\''");
-
     stream << "[Desktop Entry]" << "\n";
     stream << "Type=Application" << "\n";
     stream << "Categories=Game;ActionGame;AdventureGame;Simulation" << "\n";
-    stream << "Exec=\"" << target.toLocal8Bit() << "\" " << argstring.toLocal8Bit() << "\n";
+    stream << "Exec=" << desktopEntryExec(target, args).toLocal8Bit() << "\n";
     stream << "Name=" << name.toLocal8Bit() << "\n";
     if (!icon.isEmpty()) {
         stream << "Icon=" << icon.toLocal8Bit() << "\n";

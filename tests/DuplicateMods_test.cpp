@@ -1,0 +1,231 @@
+// SPDX-License-Identifier: GPL-3.0-only
+/*
+ *  Timeless Launcher - Minecraft Launcher
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, version 3.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#include <QDateTime>
+#include <QEventLoop>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
+#include <QTest>
+#include <QTimer>
+
+#include <archive/ArchiveWriter.h>
+#include <minecraft/mod/ModFolderModel.h>
+
+class DuplicateModsTest : public QObject {
+    Q_OBJECT
+
+    static bool writeJar(const QString& path, const QString& metadataFile, const QByteArray& metadata)
+    {
+        MMCZip::ArchiveWriter jar(path);
+        return jar.open() && jar.addFile(metadataFile, metadata) && jar.close();
+    }
+
+    static bool writeFabricMod(const QString& path, const QString& id, const QString& version = "1.0.0")
+    {
+        return writeJar(path, "fabric.mod.json", QString(R"({"schemaVersion": 1, "id": "%1", "version": "%2"})").arg(id, version).toUtf8());
+    }
+
+    static bool writeForgeMod(const QString& path, const QString& id)
+    {
+        return writeJar(
+            path, "META-INF/mods.toml",
+            QString("modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"%1\"\nversion=\"1.0.0\"\n")
+                .arg(id)
+                .toUtf8());
+    }
+
+    /// Scans the folder and waits until every mod in it has been read.
+    static bool load(ModFolderModel& model)
+    {
+        QEventLoop loop;
+        bool updated = false;
+        connect(&model, &ModFolderModel::updateFinished, &loop, [&] {
+            updated = true;
+            if (!model.hasPendingParseTasks()) {
+                loop.quit();
+            }
+        });
+        connect(&model, &ModFolderModel::parseFinished, &loop, [&] {
+            if (updated && !model.hasPendingParseTasks()) {
+                loop.quit();
+            }
+        });
+
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timeout.start(10000);
+
+        if (!model.update()) {
+            return false;
+        }
+        loop.exec();
+        return timeout.isActive();
+    }
+
+    /// A Fabric mod's jar that ends before its end record, as when its download was cut short, while the metadata at its start
+    /// is still whole
+    static bool writeCutFabricMod(const QString& path, const QString& id)
+    {
+        QByteArray data;
+        for (int i = 0; i < 20000; i++) {
+            data.append(static_cast<char>((i * 7919 + i / 13) % 256));
+        }
+        MMCZip::ArchiveWriter jar(path);
+        if (!jar.open() ||
+            !jar.addFile("fabric.mod.json", QString(R"({"schemaVersion": 1, "id": "%1", "version": "1.0.0"})").arg(id).toUtf8()) ||
+            !jar.addFile("assets/data.bin", data) || !jar.close()) {
+            return false;
+        }
+        QFile file(path);
+        return file.resize(file.size() * 6 / 10);
+    }
+
+    static QModelIndex indexOf(ModFolderModel& model, const QString& fileName)
+    {
+        for (int row = 0; row < model.rowCount(); row++) {
+            if (model.at(row).fileinfo().fileName() == fileName) {
+                return model.index(row, 0);
+            }
+        }
+        return {};
+    }
+
+   private slots:
+    void damaged()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+
+        QVERIFY(writeFabricMod(mods.filePath("whole.jar"), "whole"));
+        QVERIFY(writeCutFabricMod(mods.filePath("cut.jar"), "cut"));
+        // a web page saved in place of a mod
+        QFile page(mods.filePath("page.jar"));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        QVERIFY(page.write("<!DOCTYPE html><html><body>Your download will start shortly.</body></html>") > 0);
+        page.close();
+        // one that is turned off isn't loaded
+        QVERIFY(QFile::copy(page.fileName(), mods.filePath("other-page.jar.disabled")));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+        QCOMPARE(model.rowCount(), 4);
+
+        QCOMPARE(model.damagedMods(), QStringList({ "cut.jar", "page.jar" }));
+        // the archive library reads a jar that was cut short as far as it goes, which is how it passed for a whole mod
+        const auto cut = indexOf(model, "cut.jar");
+        QVERIFY(cut.isValid());
+        QCOMPARE(static_cast<const Mod&>(model.at(cut.row())).mod_id(), "cut");
+        QVERIFY(!static_cast<const Mod&>(model.at(indexOf(model, "whole.jar").row())).details().damaged);
+    }
+
+    void duplicates()
+    {
+        QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+
+        // two versions of one mod, left behind by an update
+        QVERIFY(writeFabricMod(mods.filePath("sodium-1.0.jar"), "sodium"));
+        QVERIFY(writeFabricMod(mods.filePath("sodium-1.1.jar"), "sodium"));
+        // the same for a Forge mod
+        QVERIFY(writeForgeMod(mods.filePath("create-0.5.jar"), "create"));
+        QVERIFY(writeForgeMod(mods.filePath("create-0.6.jar"), "create"));
+        // each loader only reads its own build, so these can sit side by side
+        QVERIFY(writeFabricMod(mods.filePath("jei-fabric.jar"), "jei"));
+        QVERIFY(writeForgeMod(mods.filePath("jei-forge.jar"), "jei"));
+        // a disabled copy isn't loaded
+        QVERIFY(writeFabricMod(mods.filePath("lithium-1.1.jar"), "lithium"));
+        QVERIFY(writeFabricMod(mods.filePath("lithium-1.0.jar.disabled"), "lithium"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY2(load(model), "The mods were never all read.");
+        QCOMPARE(model.rowCount(), 8);
+
+        QCOMPARE(model.duplicatesOf("sodium-1.0.jar"), QStringList{ "sodium-1.1.jar" });
+        QCOMPARE(model.duplicatesOf("sodium-1.1.jar"), QStringList{ "sodium-1.0.jar" });
+        QCOMPARE(model.duplicatesOf("create-0.5.jar"), QStringList{ "create-0.6.jar" });
+        QVERIFY(model.duplicatesOf("jei-fabric.jar").isEmpty());
+        QVERIFY(model.duplicatesOf("jei-forge.jar").isEmpty());
+        QVERIFY(model.duplicatesOf("lithium-1.1.jar").isEmpty());
+        QVERIFY(model.duplicatesOf("lithium-1.0.jar.disabled").isEmpty());
+
+        // a loader only trips over the copies it reads
+        const QList<QStringList> sodium{ QStringList{ "sodium-1.0.jar", "sodium-1.1.jar" } };
+        const QList<QStringList> create{ QStringList{ "create-0.5.jar", "create-0.6.jar" } };
+        QCOMPARE(model.duplicateGroups(ModPlatform::Fabric), sodium);
+        QCOMPARE(model.duplicateGroups(ModPlatform::Quilt), sodium);
+        QCOMPARE(model.duplicateGroups(ModPlatform::Forge), create);
+        QCOMPARE(model.duplicateGroups(ModPlatform::NeoForge), create);
+
+        // disabling one of the pair settles it right away
+        auto oldSodium = indexOf(model, "sodium-1.0.jar");
+        QVERIFY(oldSodium.isValid());
+        QVERIFY(model.setResourceEnabled({ oldSodium }, EnableAction::DISABLE));
+        QVERIFY(model.duplicatesOf("sodium-1.1.jar").isEmpty());
+        QVERIFY(model.duplicatesOf("sodium-1.0.jar.disabled").isEmpty());
+        QVERIFY(model.duplicateGroups(ModPlatform::Fabric).isEmpty());
+        QCOMPARE(model.duplicateGroups(ModPlatform::Forge), create);
+    }
+
+    void olderDuplicates()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+
+        // the latest version stays, going by the numbers rather than the text
+        QVERIFY(writeFabricMod(mods.filePath("sodium-0.5.3.jar"), "sodium", "0.5.3"));
+        QVERIFY(writeFabricMod(mods.filePath("sodium-0.5.10.jar"), "sodium", "0.5.10"));
+        QVERIFY(writeFabricMod(mods.filePath("sodium-0.5.8.jar"), "sodium", "0.5.8"));
+        // with the same version, the file changed last stays
+        QVERIFY(writeFabricMod(mods.filePath("lithium-a.jar"), "lithium", "0.11.2"));
+        QVERIFY(writeFabricMod(mods.filePath("lithium-b.jar"), "lithium", "0.11.2"));
+        for (const auto& [fileName, modified] : { std::pair{ "lithium-a.jar", QDateTime(QDate(2026, 9, 1), QTime(12, 0)) },
+                                                  std::pair{ "lithium-b.jar", QDateTime(QDate(2026, 9, 20), QTime(12, 0)) } }) {
+            QFile file(mods.filePath(fileName));
+            QVERIFY(file.open(QIODevice::ReadWrite));
+            QVERIFY(file.setFileTime(modified, QFileDevice::FileModificationTime));
+        }
+        // not duplicates for Fabric
+        QVERIFY(writeFabricMod(mods.filePath("iris.jar"), "iris", "1.7.0"));
+        QVERIFY(writeForgeMod(mods.filePath("create-0.5.jar"), "create"));
+        QVERIFY(writeForgeMod(mods.filePath("create-0.6.jar"), "create"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY2(load(model), "The mods were never all read.");
+        QCOMPARE(model.rowCount(), 8);
+
+        auto older = model.olderDuplicates(ModPlatform::Fabric);
+        older.sort();
+        QCOMPARE(older, (QStringList{ "lithium-a.jar", "sodium-0.5.3.jar", "sodium-0.5.8.jar" }));
+
+        QModelIndexList indexes;
+        for (const auto& fileName : older) {
+            indexes << indexOf(model, fileName);
+        }
+        QVERIFY(model.setModsEnabled(indexes, EnableAction::DISABLE));
+        QVERIFY(model.duplicateGroups(ModPlatform::Fabric).isEmpty());
+        QVERIFY(model.olderDuplicates(ModPlatform::Fabric).isEmpty());
+        QVERIFY(QFileInfo::exists(mods.filePath("sodium-0.5.10.jar")));
+        QVERIFY(QFileInfo::exists(mods.filePath("lithium-b.jar")));
+        QVERIFY(QFileInfo::exists(mods.filePath("sodium-0.5.3.jar.disabled")));
+    }
+};
+
+QTEST_GUILESS_MAIN(DuplicateModsTest)
+
+#include "DuplicateMods_test.moc"

@@ -34,13 +34,17 @@
  */
 
 #include "WorldList.h"
+#include "WorldBackups.h"
 #include "WorldTasks.h"
 
 #include <FileSystem.h>
+#include <archive/ExportToZipTask.h>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDirIterator>
 #include <QFileSystemWatcher>
 #include <QMimeData>
+#include <QPointer>
 #include <QString>
 #include <QThreadPool>
 #include <QUrl>
@@ -83,6 +87,17 @@ void WorldList::stopWatching()
         qDebug() << "Failed to stop watching" << m_dir.absolutePath();
     }
 }
+
+namespace {
+
+/// A QFileInfo for the same file that shares nothing with the one given. QFileInfo keeps what it has read about its file in data
+/// its copies share, filling it in as it's asked without a lock, so a copy used on another thread must have data of its own.
+QFileInfo unsharedFileInfo(const QFileInfo& file)
+{
+    return QFileInfo(file.filePath());
+}
+
+}  // namespace
 
 bool WorldList::update()
 {
@@ -366,27 +381,31 @@ void WorldList::installWorld(QFileInfo filename)
     w.install(m_dir.absolutePath());
 }
 
-std::unique_ptr<Task> WorldList::createInstallWorldTask(QFileInfo filename)
+std::unique_ptr<Task> WorldList::createInstallWorldTask(const QFileInfo& filename, const QString& name)
 {
     return std::make_unique<InstallWorldTask>(InstallWorldTask::Args{
         .worlds = this,
         .sourceFile = filename,
         .targetDir = m_dir.absolutePath(),
+        .targetName = name,
     });
 }
 
-std::unique_ptr<Task> WorldList::createCopyWorldTask(int index, const QString& name)
+std::unique_ptr<Task> WorldList::createCopyWorldTask(int index, const QString& name, WorldList* target)
 {
     if (index >= m_worlds.size() || index < 0) {
         return nullptr;
     }
 
     const auto& world = m_worlds.at(index);
+    if (target == nullptr) {
+        target = this;
+    }
 
     return std::make_unique<CopyWorldTask>(CopyWorldTask::Args{
-        .worlds = this,
-        .sourceFile = world.container(),
-        .targetDir = m_dir.absolutePath(),
+        .worlds = target,
+        .sourceFile = unsharedFileInfo(world.container()),
+        .targetDir = target->dir().absolutePath(),
         .targetName = name,
     });
 }
@@ -401,9 +420,18 @@ std::unique_ptr<Task> WorldList::createDeleteWorldTask(int index)
 
     return std::make_unique<DeleteWorldTask>(DeleteWorldTask::Args{
         .worlds = this,
-        .sourceFile = world.container(),
+        .sourceFile = unsharedFileInfo(world.container()),
         .displayName = world.name(),
     });
+}
+
+std::unique_ptr<MMCZip::ExportToZipTask> WorldList::createBackupWorldTask(int index)
+{
+    if (index >= m_worlds.size() || index < 0) {
+        return nullptr;
+    }
+
+    return WorldBackups::createTask(m_worlds.at(index).container(), WorldBackups::backupDir(m_dir.absolutePath()));
 }
 
 bool WorldList::dropMimeData(const QMimeData* data,
@@ -461,20 +489,21 @@ int64_t calculateWorldSize(const QFileInfo& file)
 void WorldList::loadWorldsAsync()
 {
     for (int i = 0; i < m_worlds.size(); ++i) {
-        auto file = m_worlds.at(i).container();
+        const auto file = unsharedFileInfo(m_worlds.at(i).container());
         int row = i;
-        QThreadPool::globalInstance()->start([this, file, row]() mutable {
+        QThreadPool::globalInstance()->start([self = QPointer<WorldList>(this), file, row]() mutable {
             World w(file);
             w.loadMetadata();
             w.setSize(calculateWorldSize(file));
 
+            // the list may be gone by the time this is done, so it can't be what the result is sent to
             QMetaObject::invokeMethod(
-                this,
-                [this, w, row, file]() {
-                    if (row < m_worlds.size() && m_worlds[row].container() == file) {
-                        m_worlds[row] = w;
+                QCoreApplication::instance(),
+                [self, w, row, file]() {
+                    if (self && row < self->m_worlds.size() && self->m_worlds[row].container() == file) {
+                        self->m_worlds[row] = w;
 
-                        emit dataChanged(index(row, 0), index(row, columnCount(QModelIndex()) - 1));
+                        emit self->dataChanged(self->index(row, 0), self->index(row, self->columnCount(QModelIndex()) - 1));
                     }
                 },
                 Qt::QueuedConnection);

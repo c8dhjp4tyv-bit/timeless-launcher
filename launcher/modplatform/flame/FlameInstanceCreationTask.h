@@ -38,6 +38,9 @@
 #include <memory>
 #include <optional>
 
+#include <QDir>
+#include <QHash>
+
 #include "BaseInstance.h"
 #include "InstanceTask.h"
 #include "minecraft/MinecraftInstance.h"
@@ -71,6 +74,15 @@ class FlameCreationTask final : public InstanceTask {
     void createInstance();
     void executeTask() override;
 
+    /// Whether the player has a file an installed pack came with turned on in `gameRoot`, looking in the folders the pack's files
+    /// go to, or nothing if the player took it out
+    static std::optional<bool> installedFileEnabled(const QDir& gameRoot, const QString& fileName);
+
+    /** Whether a file the pack comes with is turned on: as the player has the installed file of the same project, if there is one
+     *  in `enabledByProject`, or else when the pack requires it or the player picked it among the optional ones.
+     */
+    static bool fileEnabled(const Flame::File& file, const QHash<int, bool>& enabledByProject, const QStringList& selectedOptionalMods);
+
    private slots:
     void idResolverSucceeded();
     void setupDownloadJob();
@@ -103,4 +115,6 @@ class FlameCreationTask final : public InstanceTask {
     std::unique_ptr<MinecraftInstance> m_newInstance{};
 
     QStringList m_selectedOptionalMods;
+    /// whether the player has the installed version's files that an update replaces turned on, by the project they come from
+    QHash<int, bool> m_enabledByProject;
 };

@@ -163,6 +163,8 @@ set(LAUNCH_SOURCES
     launch/LogModel.h
     launch/TaskStepWrapper.cpp
     launch/TaskStepWrapper.h
+    logs/CrashHints.cpp
+    logs/CrashHints.h
     logs/LogParser.cpp
     logs/LogParser.h
 )
@@ -251,6 +253,8 @@ set(MINECRAFT_SOURCES
     minecraft/launch/ClaimAccount.h
     minecraft/launch/CreateGameFolders.cpp
     minecraft/launch/CreateGameFolders.h
+    minecraft/launch/CheckModFiles.cpp
+    minecraft/launch/CheckModFiles.h
     minecraft/launch/EnsureAvailableMemory.cpp
     minecraft/launch/EnsureAvailableMemory.h
     minecraft/launch/EnsureOfflineLibraries.cpp
@@ -273,6 +277,8 @@ set(MINECRAFT_SOURCES
     minecraft/launch/VerifyJavaInstall.h
     minecraft/launch/AutoInstallJava.cpp
     minecraft/launch/AutoInstallJava.h
+    minecraft/launch/BackupWorlds.cpp
+    minecraft/launch/BackupWorlds.h
 
     minecraft/GradleSpecifier.h
     minecraft/MinecraftInstance.cpp
@@ -310,6 +316,10 @@ set(MINECRAFT_SOURCES
     minecraft/VersionFilterData.cpp
     minecraft/World.h
     minecraft/World.cpp
+    minecraft/NbtSizeCheck.h
+    minecraft/NbtSizeCheck.cpp
+    minecraft/WorldBackups.h
+    minecraft/WorldBackups.cpp
     minecraft/WorldList.h
     minecraft/WorldList.cpp
     minecraft/WorldTasks.h
@@ -319,6 +329,8 @@ set(MINECRAFT_SOURCES
     minecraft/mod/Mod.h
     minecraft/mod/Mod.cpp
     minecraft/mod/ModDetails.h
+    minecraft/mod/ModBisect.h
+    minecraft/mod/ModBisect.cpp
     minecraft/mod/ModFolderModel.h
     minecraft/mod/ModFolderModel.cpp
     minecraft/mod/Resource.h
@@ -1080,6 +1092,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/ResourceUpdateDialog.h
     ui/dialogs/InstallLoaderDialog.cpp
     ui/dialogs/InstallLoaderDialog.h
+    ui/dialogs/ModBisectDialog.cpp
+    ui/dialogs/ModBisectDialog.h
     ui/dialogs/ChooseOfflineNameDialog.cpp
     ui/dialogs/ChooseOfflineNameDialog.h
     ui/dialogs/UntrustedModsDialog.cpp

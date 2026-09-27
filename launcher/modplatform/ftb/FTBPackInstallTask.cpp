@@ -122,6 +122,7 @@ void PackInstallTask::onManifestDownloadSucceeded(QByteArray* responsePtr)
     if (parseError.error != QJsonParseError::NoError) {
         qWarning() << "Error while parsing JSON response from FTB at " << parseError.offset << " reason: " << parseError.errorString();
         qWarning() << response;
+        emitFailed(tr("Could not understand pack manifest:\n") + parseError.errorString());
         return;
     }
 
@@ -311,6 +312,12 @@ void PackInstallTask::downloadPack()
         }
 
         auto path = FS::PathCombine(m_stagingPath, ".minecraft", file.path, file.name);
+        if (!QUrl::fromLocalFile(FS::PathCombine(m_stagingPath, ".minecraft")).isParentOf(QUrl::fromLocalFile(path))) {
+            emitFailed(tr("One of the files has a path that leads to an arbitrary location (%1). This is a security risk and isn't "
+                          "allowed.")
+                           .arg(FS::PathCombine(file.path, file.name)));
+            return;
+        }
         qDebug() << "Will try to download" << file.url << "to" << path;
 
         const QFileInfo fileInfo(file.name);

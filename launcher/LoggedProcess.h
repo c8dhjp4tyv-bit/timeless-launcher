@@ -77,12 +77,15 @@ class LoggedProcess : public QProcess {
    private:
     void changeState(LoggedProcess::State state);
 
-    QStringList reprocess(const QByteArray& data, QStringDecoder& decoder);
+    static QStringList reprocess(const QByteArray& data, QStringDecoder& decoder, QString& leftoverLine);
+    void flushLeftoverLines();
 
    private:
     QStringDecoder m_err_decoder;
     QStringDecoder m_out_decoder;
-    QString m_leftover_line;
+    // the start of a line whose end hasn't come in yet, one for each stream so their lines don't get glued together
+    QString m_errLeftoverLine;
+    QString m_outLeftoverLine;
     bool m_killed = false;
     State m_state = NotRunning;
     int m_exit_code = 0;

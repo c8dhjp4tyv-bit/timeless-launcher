@@ -110,6 +110,34 @@ ModFolderPage::ModFolderPage(MinecraftInstance* inst, ModFolderModel* model, QWi
     ui->actionsToolbar->insertActionAfter(ui->actionViewHomepage, ui->actionExportMetadata);
 
     ui->actionsToolbar->insertActionAfter(ui->actionViewFolder, ui->actionViewConfigs);
+
+    // the loader's own mods folder, not the core mods or the nilmods
+    if (m_instance != nullptr && m_model == m_instance->loaderModList()) {
+        m_findProblemModAction = new QAction(tr("Find Problem Mod"), this);
+        m_findProblemModAction->setObjectName("actionFindProblemMod");
+        m_findProblemModAction->setToolTip(tr("Find the mod behind a crash or another problem by turning off half of the mods at a time."));
+        connect(m_findProblemModAction, &QAction::triggered, this, &ModFolderPage::findProblemMod);
+        ui->actionsToolbar->insertActionAfter(ui->actionDisableItem, m_findProblemModAction);
+    }
+}
+
+void ModFolderPage::openedImpl()
+{
+    ExternalResourcesPage::openedImpl();
+    if (m_findProblemModAction != nullptr && !m_bisectDialog) {
+        ModBisectDialog::offerToFinishInterruptedSearch(m_instance, m_model, this);
+    }
+}
+
+void ModFolderPage::findProblemMod()
+{
+    if (m_bisectDialog) {
+        m_bisectDialog->raise();
+        m_bisectDialog->activateWindow();
+        return;
+    }
+    m_bisectDialog = new ModBisectDialog(m_instance, m_model, this);
+    m_bisectDialog->show();
 }
 
 bool ModFolderPage::shouldDisplay() const

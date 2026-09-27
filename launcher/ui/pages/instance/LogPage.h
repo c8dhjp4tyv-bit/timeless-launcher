@@ -59,6 +59,10 @@ class LogFormatProxyModel : public QIdentityProxyModel {
     QFont m_font;
 };
 
+/// The lowest level of the lines that each choice in the Show box of the log pages lets through: all of them, warnings and
+/// errors, or errors
+MessageLevel lowestLevelShown(int choice);
+
 class LogPage : public QWidget, public BasePage {
     Q_OBJECT
 
@@ -82,6 +86,7 @@ class LogPage : public QWidget, public BasePage {
     void on_trackLogCheckbox_clicked(bool checked);
     void on_wrapCheckbox_clicked(bool checked);
     void on_colorCheckbox_clicked(bool checked);
+    void on_levelFilterBox_currentIndexChanged(int index);
 
     void on_findButton_clicked();
     void findActivated();

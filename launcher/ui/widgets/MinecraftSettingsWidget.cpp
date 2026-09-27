@@ -81,6 +81,7 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QW
         m_ui->nativeWorkaroundsGroupBox->setCheckable(true);
         m_ui->perfomanceGroupBox->setCheckable(true);
         m_ui->gameTimeGroupBox->setCheckable(true);
+        m_ui->worldBackupsGroupBox->setCheckable(true);
         m_ui->legacySettingsGroupBox->setCheckable(true);
 
         m_quickPlaySingleplayer = m_instance->traits().contains("feature:is_quick_play_singleplayer");
@@ -149,6 +150,7 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QW
         m_ui->enableMangoHud->setToolTip(tr("MangoHud could not be found on your system."));
     }
 
+    connect(m_ui->backUpWorldsBeforeLaunch, &QAbstractButton::toggled, m_ui->worldBackupsToKeep, &QWidget::setEnabled);
     connect(m_ui->useNativeOpenALCheck, &QAbstractButton::toggled, m_ui->lineEditOpenALPath, &QWidget::setEnabled);
     connect(m_ui->useNativeGLFWCheck, &QAbstractButton::toggled, m_ui->lineEditGLFWPath, &QWidget::setEnabled);
     connect(m_ui->useNativeSDLCheck, &QAbstractButton::toggled, m_ui->lineEditSDLPath, &QWidget::setEnabled);
@@ -186,6 +188,13 @@ void MinecraftSettingsWidget::loadSettings()
     m_ui->countGameTime->setChecked(settings->get("CountGameTime").toBool());
     m_ui->showGlobalGameTime->setChecked(m_instance == nullptr && settings->get("ShowGlobalGameTime").toBool());
     m_ui->showGameTimeWithoutDays->setChecked(m_instance == nullptr && settings->get("ShowGameTimeWithoutDays").toBool());
+
+    // World backups
+    m_ui->worldBackupsGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideWorldBackups").toBool());
+    m_ui->backUpWorldsBeforeUpdate->setChecked(settings->get("BackUpWorldsBeforeUpdate").toBool());
+    m_ui->backUpWorldsBeforeLaunch->setChecked(settings->get("BackUpWorldsBeforeLaunch").toBool());
+    m_ui->worldBackupsToKeep->setValue(settings->get("WorldBackupsToKeep").toInt());
+    m_ui->worldBackupsToKeep->setEnabled(m_ui->backUpWorldsBeforeLaunch->isChecked());
 
     // Console
     m_ui->consoleSettingsBox->setChecked(m_instance == nullptr || settings->get("OverrideConsole").toBool());
@@ -373,6 +382,23 @@ void MinecraftSettingsWidget::saveSettings()
         settings->reset("MinecraftWinHeight");
         settings->reset("CloseAfterLaunch");
         settings->reset("QuitAfterGameStop");
+    }
+
+    // World backups
+    const bool worldBackups = m_instance == nullptr || m_ui->worldBackupsGroupBox->isChecked();
+
+    if (m_instance != nullptr) {
+        settings->set("OverrideWorldBackups", worldBackups);
+    }
+
+    if (worldBackups) {
+        settings->set("BackUpWorldsBeforeUpdate", m_ui->backUpWorldsBeforeUpdate->isChecked());
+        settings->set("BackUpWorldsBeforeLaunch", m_ui->backUpWorldsBeforeLaunch->isChecked());
+        settings->set("WorldBackupsToKeep", m_ui->worldBackupsToKeep->value());
+    } else {
+        settings->reset("BackUpWorldsBeforeUpdate");
+        settings->reset("BackUpWorldsBeforeLaunch");
+        settings->reset("WorldBackupsToKeep");
     }
 
     // Custom Commands

@@ -20,6 +20,8 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <QFile>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 
@@ -69,6 +71,30 @@ class ShaderPackParseTest : public QObject {
 
         QVERIFY(pack.packFormat() == ShaderPackFormat::INVALID);
         QVERIFY(valid == false);
+    }
+
+    void cutShortZipIsStillListed()
+    {
+        // A pack whose download stopped right after its shaders folder. It is still listed, rather than left out as if it weren't
+        // a shader pack, as it was before reading a zip to its end was checked.
+        QFile whole(FS::PathCombine(QFINDTESTDATA("testdata/ShaderPackParse"), "shaderpack1.zip"));
+        QVERIFY(whole.open(QIODevice::ReadOnly));
+        const auto data = whole.readAll();
+        // the header of the next entry starts 30 bytes before its name
+        const auto next = data.indexOf("shaders/shaders.properties") - 30;
+        QVERIFY(next > 0);
+
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto path = temp.filePath("shaderpack1.zip");
+        QFile cut(path);
+        QVERIFY(cut.open(QIODevice::WriteOnly));
+        QCOMPARE(cut.write(data.first(next)), next);
+        cut.close();
+
+        ShaderPack pack{ QFileInfo(path) };
+        QVERIFY(ShaderPackUtils::process(pack));
+        QCOMPARE(pack.packFormat(), ShaderPackFormat::VALID);
     }
 };
 

@@ -40,6 +40,9 @@ class LauncherPartLaunch : public LaunchStep {
     void on_state(LoggedProcess::State state);
 
    private:
+    /// Adds to the log what it says about why the game crashed, if it's something that is known to happen often
+    void logCrashHints();
+
     LoggedProcess m_process;
     QString m_command;
     AuthSessionPtr m_session;

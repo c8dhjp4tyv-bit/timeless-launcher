@@ -2,12 +2,14 @@
 
 #include <qdcss.h>
 #include <toml++/toml.h>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QRegularExpression>
 #include <QString>
+#include <algorithm>
 
 #include "Json.h"
 #include "archive/ArchiveReader.h"
@@ -15,6 +17,27 @@
 #include "settings/INIFile.h"
 
 static const QRegularExpression s_newlineRegex("\r\n|\n|\r");
+
+namespace {
+// Fabric and Quilt both key an icon map by the width of each image: {"32": "icon32.png", "128": "icon128.png"}
+QString largestIcon(const QJsonObject& icons)
+{
+    int largest = 0;
+    QString bestIcon;
+    for (auto it = icons.begin(); it != icons.end(); ++it) {
+        auto size = it.key().split('x').first().toInt();
+        if (size > largest) {
+            largest = size;
+            bestIcon = it.value().toString();
+        }
+    }
+    if (bestIcon.isEmpty() && !icons.isEmpty()) {
+        // parsing the sizes failed, take the first
+        bestIcon = icons.begin().value().toString();
+    }
+    return bestIcon;
+}
+}  // namespace
 
 namespace ModUtils {
 
@@ -336,23 +359,7 @@ ModDetails ReadFabricModInfo(QByteArray contents)
         if (object.contains("icon")) {
             auto icon = object.value("icon");
             if (icon.isObject()) {
-                auto obj = icon.toObject();
-                // take the largest icon
-                int largest = 0;
-                QString bestIcon;
-                for (const auto& key : obj.keys()) {
-                    auto size = key.split('x').first().toInt();
-                    if (size > largest) {
-                        largest = size;
-                        bestIcon = obj.value(key).toString();
-                    }
-                }
-                if (!bestIcon.isEmpty()) {
-                    details.icon_file = bestIcon;
-                } else if (!obj.isEmpty()) {
-                    // take the first
-                    details.icon_file = obj.begin().value().toString();
-                }
+                details.icon_file = largestIcon(icon.toObject());
             } else if (icon.isString()) {
                 details.icon_file = icon.toString();
             }
@@ -433,49 +440,32 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
             if (modMetadata.contains("icon")) {
                 auto icon = modMetadata.value("icon");
                 if (icon.isObject()) {
-                    auto obj = icon.toObject();
-                    // take the largest icon
-                    int largest = 0;
-                    for (auto key : obj.keys()) {
-                        auto size = key.split('x').first().toInt();
-                        if (size > largest) {
-                            largest = size;
-                        }
-                    }
-                    if (largest > 0) {
-                        auto key = QString::number(largest) + "x" + QString::number(largest);
-                        details.icon_file = obj.value(key).toString();
-                    } else {  // parsing the sizes failed
-                        // take the first
-                        if (auto it = obj.begin(); it != obj.end()) {
-                            details.icon_file = it->toString();
-                        }
-                    }
+                    details.icon_file = largestIcon(icon.toObject());
                 } else if (icon.isString()) {
                     details.icon_file = icon.toString();
                 }
             }
-            if (object.contains("depends")) {
-                auto depends = object.value("depends");
-                if (depends.isArray()) {
-                    auto array = depends.toArray();
-                    for (auto obj : array) {
-                        QString modId;
-                        if (obj.isString()) {
-                            modId = obj.toString();
-                        } else if (obj.isObject()) {
-                            auto objValue = obj.toObject();
-                            modId = objValue.value("id").toString();
-                            if (objValue.contains("optional") && objValue.value("optional").toBool()) {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
-                        if (modId != "minecraft" && !modId.startsWith("quilt_")) {
-                            details.dependencies.append(modId);
-                        }
+
+            // depends lives in quilt_loader, next to id and version
+            const auto depends = modInfo.value("depends").toArray();
+            for (const auto& dependency : depends) {
+                QString modId;
+                if (dependency.isString()) {
+                    modId = dependency.toString();
+                } else if (dependency.isObject()) {
+                    auto dependencyObject = dependency.toObject();
+                    if (dependencyObject.value("optional").toBool()) {
+                        continue;
                     }
+                    modId = dependencyObject.value("id").toString();
+                } else {
+                    // an array is satisfied by any one of its entries, so none of them is required on its own
+                    continue;
+                }
+                // the id may be written as mavenGroup:modId, but mods are matched by their bare id
+                modId = modId.section(':', -1);
+                if (!modId.isEmpty() && modId != "minecraft" && !modId.startsWith("quilt_")) {
+                    details.dependencies.append(modId);
                 }
             }
         }
@@ -582,12 +572,17 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
     QByteArray nilData = {};
     QString nilFilePath = {};
 
+    // A mod file that breaks off, as when its download was cut short, can hold its metadata before that, which names the mod on
+    // the Mods page all the same
     if (!zip.parse([&details, &baseForgePopulated, &manifestVersion, &isValid, &nilData, &isNilMod, &nilFilePath](
                        MMCZip::ArchiveReader::File* file, bool& stop) {
             auto filePath = file->filename();
 
             if (filePath == "META-INF/mods.toml" || filePath == "META-INF/neoforge.mods.toml") {
                 details = ReadMCModTOML(file->readAll());
+                // NeoForge kept reading Forge's file until it got one of its own
+                details.loaders = filePath == "META-INF/neoforge.mods.toml" ? ModPlatform::ModLoaderTypes(ModPlatform::NeoForge)
+                                                                            : ModPlatform::Forge | ModPlatform::NeoForge;
                 isValid = true;
                 if (details.version == "${file.jarVersion}" && !manifestVersion.isEmpty()) {
                     details.version = manifestVersion;
@@ -620,24 +615,29 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
             }
             if (filePath == "mcmod.info") {
                 details = ReadMCModInfo(file->readAll());
+                details.loaders = ModPlatform::Forge;
                 isValid = true;
                 stop = true;
                 return true;
             }
             if (filePath == "quilt.mod.json") {
                 details = ReadQuiltModInfo(file->readAll());
+                details.loaders = ModPlatform::Quilt;
                 isValid = true;
                 stop = true;
                 return true;
             }
             if (filePath == "fabric.mod.json") {
                 details = ReadFabricModInfo(file->readAll());
+                // Quilt loads Fabric mods too
+                details.loaders = ModPlatform::Fabric | ModPlatform::Quilt;
                 isValid = true;
                 stop = true;
                 return true;
             }
             if (filePath == "forgeversion.properties") {
                 details = ReadForgeInfo(file->readAll());
+                details.loaders = ModPlatform::Forge;
                 isValid = true;
                 stop = true;
                 return true;
@@ -659,7 +659,8 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
             }
             file->skip();
             return true;
-        })) {
+        }) &&
+        !zip.endedEarly()) {
         return false;
     }
     if (isNilMod) {
@@ -681,12 +682,37 @@ bool processLitemod(Mod& mod, [[maybe_unused]] ProcessingLevel level)
 
     if (auto file = zip.goToFile("litemod.json"); file) {
         details = ReadLiteModInfo(file->readAll());
+        details.loaders = ModPlatform::LiteLoader;
 
         mod.setDetails(details);
         return true;
     }
 
     return false;  // no valid litemod.json found in archive
+}
+
+bool isMissingZipEnd(const QString& path)
+{
+    // The record takes 22 bytes and ends with a comment of up to 65535, so, as Java does, it is looked for in the last 65557
+    // bytes of the file, from their end.
+    constexpr qint64 recordSize = 22;
+    constexpr qint64 window = recordSize + 0xFFFF;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    if (!file.seek(std::max<qint64>(0, file.size() - window))) {
+        return false;
+    }
+    const auto tail = file.readAll();
+    static const QByteArray s_signature("PK\x05\x06", 4);
+    for (auto at = tail.lastIndexOf(s_signature); at >= 0; at = at > 0 ? tail.lastIndexOf(s_signature, at - 1) : -1) {
+        if (at + recordSize <= tail.size()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /** Checks whether a file is valid as a mod or not. */
@@ -763,6 +789,9 @@ void LocalModParseTask::executeTask()
     ModUtils::process(mod, ModUtils::ProcessingLevel::Full);
 
     m_result->details = mod.details();
+    if (mod.type() == ResourceType::ZIPFILE || mod.type() == ResourceType::LITEMOD) {
+        m_result->details.damaged = ModUtils::isMissingZipEnd(m_modFile.filePath());
+    }
 
     if (m_aborted)
         emitAborted();

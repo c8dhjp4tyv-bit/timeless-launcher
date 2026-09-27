@@ -53,6 +53,7 @@
 #include <algorithm>
 #include <set>
 
+#include "Version.h"
 #include "minecraft/mod/Resource.h"
 #include "minecraft/mod/ResourceFolderModel.h"
 #include "minecraft/mod/tasks/LocalModParseTask.h"
@@ -90,8 +91,15 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
     int row = index.row();
     int column = index.column();
 
+    const auto duplicates = duplicatesOf(at(row).internalId());
+    // like two copies of a mod, this stops the mod loader, but only while it's enabled
+    const auto damaged = at(row).enabled() && at(row).details().damaged;
+
     switch (role) {
         case Qt::BackgroundRole:
+            if (!duplicates.isEmpty() || damaged) {
+                return QBrush(QColor(255, 0, 0, 40));
+            }
             return rowBackground(row);
         case Qt::DisplayRole:
             switch (column) {
@@ -129,6 +137,9 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
             if (column == ImageColumn) {
                 return at(row).icon({ 32, 32 }, Qt::AspectRatioMode::KeepAspectRatioByExpanding);
             }
+            if (column == NameColumn && (!duplicates.isEmpty() || damaged)) {
+                return QIcon::fromTheme("status-bad");
+            }
             break;
         }
         case Qt::SizeHintRole:
@@ -151,6 +162,19 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
                         return list.join(QLatin1Char('\n'));
                     }
                     break;
+                }
+                case NameColumn: {
+                    auto tooltip = ResourceFolderModel::data(index.siblingAtColumn(ResourceFolderModel::NameColumn), role).toString();
+                    if (!duplicates.isEmpty()) {
+                        tooltip += "\n" + tr("Duplicate: %1 has the same mod ID (%2). The game won't start with more than one of them "
+                                             "enabled, so disable or delete all but one.")
+                                              .arg(duplicates.join(", "), at(row).mod_id());
+                    }
+                    if (damaged) {
+                        tooltip += "\n" + tr("Damaged: this file is cut short or isn't a mod at all, as when its download was cut short, "
+                                             "and the mod loader will stop at it. Download it again, or disable it.");
+                    }
+                    return tooltip;
                 }
                 default:
                     break;
@@ -346,6 +370,113 @@ void ModFolderModel::onParseFinished()
             emit dataChanged(index(row), index(row, columnCount(QModelIndex()) - 1));
         }
     }
+
+    updateDuplicates();
+}
+
+void ModFolderModel::onUpdateSucceeded()
+{
+    ResourceFolderModel::onUpdateSucceeded();
+    // a removed or renamed file may have been one of a pair
+    updateDuplicates();
+}
+
+QList<QStringList> ModFolderModel::duplicateGroups(ModPlatform::ModLoaderTypes loaders)
+{
+    QMap<QString, QStringList> byId;
+    for (auto* mod : allMods()) {
+        // as for duplicatesOf(), a mod whose loaders aren't known may be read by any of them
+        const auto modLoaders = mod->details().loaders;
+        if (mod->enabled() && !mod->mod_id().isEmpty() && (!modLoaders || modLoaders.testAnyFlags(loaders))) {
+            byId[mod->mod_id()] << mod->fileinfo().fileName();
+        }
+    }
+
+    QList<QStringList> groups;
+    for (auto& group : byId) {
+        if (group.size() > 1) {
+            group.sort();
+            groups << group;
+        }
+    }
+    return groups;
+}
+
+QStringList ModFolderModel::damagedMods()
+{
+    QStringList damaged;
+    for (auto* mod : allMods()) {
+        if (mod->enabled() && mod->details().damaged) {
+            damaged << mod->fileinfo().fileName();
+        }
+    }
+    damaged.sort();
+    return damaged;
+}
+
+QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)
+{
+    QHash<QString, Mod*> byFileName;
+    for (auto* mod : allMods()) {
+        byFileName.insert(mod->fileinfo().fileName(), mod);
+    }
+
+    QStringList older;
+    for (const auto& group : duplicateGroups(loaders)) {
+        QList<Mod*> copies;
+        for (const auto& fileName : group) {
+            copies << byFileName.value(fileName);
+        }
+        // the one to keep first
+        std::ranges::sort(copies, [](const Mod* a, const Mod* b) {
+            if (const auto order = Version(a->version()) <=> Version(b->version()); order != 0) {
+                return order > 0;
+            }
+            const auto aModified = a->fileinfo().lastModified();
+            const auto bModified = b->fileinfo().lastModified();
+            if (aModified != bModified) {
+                return aModified > bModified;
+            }
+            return a->fileinfo().fileName() < b->fileinfo().fileName();
+        });
+        for (const auto* mod : copies.mid(1)) {
+            older << mod->fileinfo().fileName();
+        }
+    }
+    return older;
+}
+
+void ModFolderModel::updateDuplicates()
+{
+    QHash<QString, QList<Mod*>> byId;
+    for (auto* mod : allMods()) {
+        // disabled mods aren't loaded, and a mod without an ID was never read
+        if (mod->enabled() && !mod->mod_id().isEmpty()) {
+            byId[mod->mod_id()] << mod;
+        }
+    }
+
+    QHash<QString, QStringList> duplicates;
+    for (const auto& sameId : std::as_const(byId)) {
+        for (auto* mod : sameId) {
+            for (auto* other : sameId) {
+                // e.g. the Fabric and the Forge build of a mod: each loader only reads one of them
+                auto loaders = mod->details().loaders;
+                auto otherLoaders = other->details().loaders;
+                if (other != mod && (!loaders || !otherLoaders || loaders.testAnyFlags(otherLoaders))) {
+                    duplicates[mod->internalId()] << other->fileinfo().fileName();
+                }
+            }
+        }
+    }
+
+    if (duplicates == m_duplicates) {
+        return;
+    }
+    m_duplicates = duplicates;
+    if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount({}) - 1));
+    }
 }
 
 namespace {
@@ -501,6 +632,7 @@ bool ModFolderModel::setResourceEnabled(const QModelIndexList& indexes, EnableAc
 
     auto disableStatus = ResourceFolderModel::setResourceEnabled(toList(toDisable), EnableAction::DISABLE);
     auto enableStatus = ResourceFolderModel::setResourceEnabled(toList(toEnable), EnableAction::ENABLE);
+    updateDuplicates();
     return disableStatus && enableStatus;
 }
 
@@ -523,6 +655,19 @@ QStringList ModFolderModel::requiresList(const QString& id) const
 QStringList ModFolderModel::requiredByList(const QString& id) const
 {
     return reqToList(m_requiredBy.value(id));
+}
+
+QList<Mod*> ModFolderModel::requiredMods(const QString& id) const
+{
+    const auto mods = m_requires.value(id);
+    return { mods.begin(), mods.end() };
+}
+
+bool ModFolderModel::setModsEnabled(const QModelIndexList& indexes, EnableAction action)
+{
+    const bool ok = applyEnableAction(indexes, action);
+    updateDuplicates();
+    return ok;
 }
 
 bool ModFolderModel::deleteResources(const QModelIndexList& indexes)

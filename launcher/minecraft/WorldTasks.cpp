@@ -37,7 +37,7 @@ void InstallWorldTask::executeTask()
 
     QThreadPool::globalInstance()->start([self, args]() mutable {
         World world(args.sourceFile);
-        const bool ok = world.isValid() && world.install(args.targetDir);
+        const bool ok = world.isValid() && world.install(args.targetDir, args.targetName);
 
         invokeOnMainThread([self, worlds = args.worlds, ok]() {
             if (!self) {

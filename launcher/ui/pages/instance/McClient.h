@@ -1,9 +1,11 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QFuture>
 #include <QJsonObject>
 #include <QObject>
 #include <QTcpSocket>
+#include <QTimer>
 
 // Client for the Minecraft protocol
 class McClient : public QObject {
@@ -13,6 +15,8 @@ class McClient : public QObject {
     explicit McClient(QObject* parent, QString domain, QString ip, uint16_t port);
     //! Read status data of the server, and calls the succeeded() signal with the parsed JSON data
     void getStatusData();
+    //! How long the server took to start answering the status request, in milliseconds, or -1 if it hasn't
+    qint64 latency() const { return m_latency; }
 
    signals:
     void succeeded(QJsonObject data);
@@ -47,6 +51,10 @@ class McClient : public QObject {
     QString m_ip;
     uint16_t m_port;
     QTcpSocket m_socket;
+    QTimer m_timeout;
+    bool m_done = false;
+    QElapsedTimer m_requestTimer;
+    qint64 m_latency = -1;
 
     ResponseReadState m_responseReadState = ResponseReadState::Waiting;
     int32_t m_wantedRespLength = 0;

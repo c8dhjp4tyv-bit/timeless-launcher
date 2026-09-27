@@ -93,6 +93,7 @@ bool processZIP(TexturePack& pack, ProcessingLevel level)
     bool packProcessed = false;
     bool iconProcessed = false;
 
+    // a pack that breaks off, as when its download was cut short, is still listed, with what could be read of it
     return zip.parse([&packProcessed, &iconProcessed, &pack, level](MMCZip::ArchiveReader::File* file, bool& stop) {
         if (!packProcessed && file->filename() == "pack.txt") {
             packProcessed = true;
@@ -108,7 +109,7 @@ bool processZIP(TexturePack& pack, ProcessingLevel level)
         }
         file->skip();
         return true;
-    });
+    }) || zip.endedEarly();
 }
 
 bool processPackTXT(TexturePack& pack, QByteArray&& raw_data)

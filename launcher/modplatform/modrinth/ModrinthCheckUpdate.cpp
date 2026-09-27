@@ -209,7 +209,9 @@ void ModrinthCheckUpdate::checkNextLoader()
         return;
     }
     if (m_loaderIdx < m_loadersList.size()) {  // this are mods so check with loades
-        getUpdateModsForLoader(m_loadersList.at(m_loaderIdx), m_loaderIdx > m_initialSize);
+        // The instance's own loaders come first. Every loader after them was only added because some mod was installed
+        // for it, so only those mods may be updated to a version for it.
+        getUpdateModsForLoader(m_loadersList.at(m_loaderIdx), m_loaderIdx >= m_initialSize);
         return;
     }
     if (m_loadersList.isEmpty() && m_loaderIdx == 0) {  // this are other resources no need to check more than once with empty loader

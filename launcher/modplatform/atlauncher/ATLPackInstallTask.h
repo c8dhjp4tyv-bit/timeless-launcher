@@ -103,6 +103,8 @@ class PackInstallTask : public InstanceTask {
 
    private:
     QString getDirForModType(ModType type, const QString& raw);
+    /// Whether a file the pack names ends up in the instance's game folder, rather than wherever "../" in its name leads
+    bool isInsideGameFolder(const QString& path) const;
     QString getVersionForLoader(const QString& uid);
     static QString detectLibrary(const VersionLibrary& library);
 

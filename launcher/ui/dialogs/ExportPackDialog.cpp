@@ -91,7 +91,8 @@ ExportPackDialog::ExportPackDialog(MinecraftInstance* instance, QWidget* parent,
     const QDir instanceRoot(instance->instanceRoot());
     m_proxy = new FileIgnoreProxy(instance->instanceRoot(), this);
     auto prefix = QDir(instance->instanceRoot()).relativeFilePath(instance->gameRoot());
-    for (auto path : { "logs", "crash-reports", ".cache", ".fabric", ".quilt" }) {
+    // backups of worlds, the game's or the launcher's, don't belong in a pack
+    for (const auto* path : { "logs", "crash-reports", ".cache", ".fabric", ".quilt", "backups" }) {
         m_proxy->ignoreFilesWithPath().insert(FS::PathCombine(prefix, path));
     }
     m_proxy->ignoreFilesWithName().append({ ".DS_Store", "thumbs.db", "Thumbs.db" });

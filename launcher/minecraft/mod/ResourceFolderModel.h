@@ -104,6 +104,8 @@ class ResourceFolderModel : public QAbstractListModel {
      *  Returns whether the action was successfully applied to all resources.
      */
     virtual bool setResourceEnabled(const QModelIndexList& indexes, EnableAction action);
+    /** The same, without first asking whether to go ahead while the instance is running */
+    bool applyEnableAction(const QModelIndexList& indexes, EnableAction action);
 
     /** Creates a new update task and start it. Returns false if no update was done, like when an update is already underway. */
     virtual bool update();

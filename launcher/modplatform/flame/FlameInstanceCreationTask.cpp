@@ -55,6 +55,7 @@
 #include "settings/INISettingsObject.h"
 
 #include "tasks/ConcurrentTask.h"
+#include "ui/GuiUtil.h"
 #include "ui/dialogs/BlockedModsDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 
@@ -134,6 +135,11 @@ void FlameCreationTask::executeTask()
             emitAborted();
             return;
         }
+        // updating from the pack's page has backed up the worlds already
+        if (!GuiUtil::backUpWorldsBeforeUpdate(inst, m_parent)) {
+            emitAborted();
+            return;
+        }
     }
 
     const QDir oldInstDir(inst->instanceRoot());
@@ -164,45 +170,35 @@ void FlameCreationTask::executeTask()
         createInst();
     };
 
+    Flame::Manifest oldPack;
     if (oldIndexFile.exists()) {
-        Flame::Manifest oldPack;
-        Flame::loadManifest(oldPack, oldIndexPath);
-
+        try {
+            Flame::loadManifest(oldPack, oldIndexPath);
+        } catch (const Exception& e) {
+            // an unreadable or broken manifest is no better than a missing one
+            qWarning() << "Could not read the manifest of the installed version:" << e.cause();
+        }
+    }
+    if (oldPack.isLoaded) {
         auto oldFiles = oldPack.files;
 
-        auto& files = m_pack.files;
-
         // Remove repeated files, we don't need to download them!
-        auto filesIterator = files.begin();
-        while (filesIterator != files.end()) {
-            const auto& file = filesIterator;
-
-            auto oldFile = oldFiles.find(file.key());
-            if (oldFile != oldFiles.end()) {
-                // We found a match, but is it a different version?
-                if (oldFile->fileId == file->fileId) {
-                    qDebug() << "Removed file at" << file->targetFolder << "with id" << file->fileId << "from list of downloads";
-
-                    oldFiles.remove(file.key());
-                    filesIterator = files.erase(filesIterator);
-
-                    if (filesIterator != files.begin()) {
-                        filesIterator--;
-                    }
-                }
-            }
-
-            filesIterator++;
-        }
+        Flame::dropUnchangedFiles(m_pack.files, oldFiles);
 
         const QDir oldMinecraftDir(inst->gameRoot());
 
         // We will remove all the previous overrides, to prevent duplicate files!
-        // TODO: Currently 'overrides' will always override the stuff on update. How do we preserve unchanged overrides?
-        // FIXME: We may want to do something about disabled mods.
+        // The player's changes to the ones the update leaves as they were are put back once its overrides are in place.
+        // The player may have turned off a mod among them, so that copy goes too, and the update's is turned off in turn.
         auto oldOverrides = Override::readOverrides("overrides", oldIndexFolder);
         for (const auto& entry : oldOverrides) {
-            scheduleToDelete(m_parent, oldMinecraftDir, entry);
+            scheduleToDelete(m_parent, oldMinecraftDir, entry, true);
+        }
+
+        // Nothing was replaced or removed, so there are no old files to look up
+        if (oldFiles.isEmpty()) {
+            createInst();
+            return;
         }
 
         // Remove remaining old files (we need to do an API request to know which ids are which files...)
@@ -214,51 +210,49 @@ void FlameCreationTask::executeTask()
 
         auto [job, rawResponse] = FlameAPI::getFiles(fileIds);
 
-        connect(job.get(), &Task::succeeded, this,
-                [this, rawResponse, fileIds, oldInstDir, oldFiles, oldMinecraftDir, createInst]() mutable {
-                    // Parse the API response
-                    QJsonParseError parseError{};
-                    auto doc = QJsonDocument::fromJson(*rawResponse, &parseError);
-                    if (parseError.error != QJsonParseError::NoError) {
-                        qWarning() << "Error while parsing JSON response from Flame files task at" << parseError.offset
-                                   << "reason:" << parseError.errorString();
-                        qWarning() << *rawResponse;
-                        return;
+        connect(job.get(), &Task::succeeded, this, [this, rawResponse, oldMinecraftDir, createInst, warnUser]() {
+            // Parse the API response
+            QJsonParseError parseError{};
+            auto doc = QJsonDocument::fromJson(*rawResponse, &parseError);
+            if (parseError.error != QJsonParseError::NoError) {
+                qWarning() << "Error while parsing JSON response from Flame files task at" << parseError.offset
+                           << "reason:" << parseError.errorString();
+                qWarning() << *rawResponse;
+                warnUser(tr("Failed to fetch the old files."),
+                         tr("We couldn't read the old files because: %1. This may cause some of the files to be duplicated. Do you "
+                            "want to continue?")
+                             .arg(parseError.errorString()));
+                return;
+            }
+
+            try {
+                // The endpoint answers with an array even when asked about a single file.
+                auto entries = Json::requireArray(Json::requireObject(doc), "data");
+                for (auto entry : entries) {
+                    auto entryObj = Json::requireObject(entry);
+
+                    // We don't care about blocked mods, we just need local data to delete the file
+                    auto version = FlameMod::loadIndexedPackVersion(entryObj);
+                    if (version.fileName.isEmpty()) {
+                        continue;
                     }
 
-                    try {
-                        QJsonArray entries;
-                        if (fileIds.size() == 1) {
-                            entries = { Json::requireObject(Json::requireObject(doc), "data") };
-                        } else {
-                            entries = Json::requireArray(Json::requireObject(doc), "data");
-                        }
-
-                        for (auto entry : entries) {
-                            auto entryObj = Json::requireObject(entry);
-
-                            Flame::File file;
-                            // We don't care about blocked mods, we just need local data to delete the file
-                            file.version = FlameMod::loadIndexedPackVersion(entryObj);
-                            auto id = Json::requireInteger(entryObj, "id");
-                            oldFiles.insert(id, file);
-                        }
-                    } catch (Json::JsonException& e) {
-                        qCritical() << e.cause() << e.what();
+                    // the next version of a file the player turned on or off is left the same way
+                    if (const auto enabled = installedFileEnabled(oldMinecraftDir, version.fileName); enabled.has_value()) {
+                        m_enabledByProject.insert(version.addonId.toInt(), *enabled);
                     }
 
-                    // Delete the files
-                    for (const auto& file : oldFiles) {
-                        if (file.version.fileName.isEmpty() || file.targetFolder.isEmpty()) {
-                            continue;
-                        }
-
-                        const QString relativePath(FS::PathCombine(file.targetFolder, file.version.fileName));
-                        scheduleToDelete(m_parent, oldMinecraftDir, relativePath, true);
+                    // Only mods stay in the folder they were downloaded to, so look everywhere a file may have been moved to
+                    for (const auto& folder : Flame::installFolders()) {
+                        scheduleToDelete(m_parent, oldMinecraftDir, FS::PathCombine(folder, version.fileName), true);
                     }
+                }
+            } catch (Json::JsonException& e) {
+                qCritical() << e.cause() << e.what();
+            }
 
-                    createInst();
-                });
+            createInst();
+        });
         connect(job.get(), &Task::aborted, this, [warnUser] {
             warnUser(tr("Failed to fetch the old files."),
                      tr("We couldn't fetch the old files because the task was aborted. This may cause "
@@ -391,6 +385,13 @@ void FlameCreationTask::createInstance()
 
     if (!m_pack.overrides.isEmpty()) {
         QString overridePath = FS::PathCombine(m_stagingPath, m_pack.overrides);
+        // The manifest names the folder, and it is moved into the instance: one outside the pack would take the user's files with it
+        if (!QUrl::fromLocalFile(m_stagingPath).isParentOf(QUrl::fromLocalFile(overridePath))) {
+            emitFailed(tr("The overrides folder of the pack leads to an arbitrary location (%1). This is a security risk and isn't "
+                          "allowed.")
+                           .arg(m_pack.overrides));
+            return;
+        }
         if (QFile::exists(overridePath)) {
             // Create a list of overrides in "overrides.txt" inside flame/
             Override::createOverrides("overrides", parentFolder, overridePath);
@@ -404,6 +405,19 @@ void FlameCreationTask::createInstance()
             logWarning(
                 tr("The specified overrides folder (%1) is missing. Maybe the modpack was already used before?").arg(m_pack.overrides));
         }
+    }
+
+    // an update keeps the player's changes to the files it leaves as they were, the player's game options, and the mods the pack
+    // comes with on or off as the player has them
+    const auto* oldInstance = m_oldInstance.value_or(nullptr);
+    const auto gameRoot = FS::PathCombine(m_stagingPath, "minecraft");
+    const auto oldGameRoot = oldInstance ? oldInstance->gameRoot() : QString();
+    const auto oldPackFolder = oldInstance ? FS::PathCombine(oldInstance->instanceRoot(), "flame") : QString();
+    const auto overrides = Override::readOverrides("overrides", parentFolder);
+    Override::keepPlayerChanges(gameRoot, parentFolder, overrides, oldGameRoot, oldPackFolder);
+    Override::keepGameOptions(gameRoot, parentFolder, oldGameRoot, oldPackFolder);
+    if (oldInstance != nullptr) {
+        Override::keepEnabledStates(gameRoot, overrides, oldGameRoot);
     }
 
     if (!promptForUntrustedMods()) {
@@ -531,13 +545,39 @@ void FlameCreationTask::createInstance()
     m_modIdResolver->start();
 }
 
+std::optional<bool> FlameCreationTask::installedFileEnabled(const QDir& gameRoot, const QString& fileName)
+{
+    for (const auto& folder : Flame::installFolders()) {
+        const auto path = gameRoot.filePath(FS::PathCombine(folder, fileName));
+        if (QFileInfo::exists(path)) {
+            return true;
+        }
+        if (QFileInfo::exists(path + ".disabled")) {
+            return false;
+        }
+    }
+    return std::nullopt;
+}
+
+bool FlameCreationTask::fileEnabled(const Flame::File& file,
+                                    const QHash<int, bool>& enabledByProject,
+                                    const QStringList& selectedOptionalMods)
+{
+    if (const auto enabled = enabledByProject.constFind(file.projectId); enabled != enabledByProject.constEnd()) {
+        return *enabled;
+    }
+    return file.required ||
+           selectedOptionalMods.contains(FS::PathCombine(file.targetFolder, FS::RemoveInvalidPathChars(file.version.fileName)));
+}
+
 void FlameCreationTask::idResolverSucceeded()
 {
     auto results = m_modIdResolver->getResults().files;
 
     QStringList optionalFiles;
     for (auto& result : results) {
-        if (!result.required) {
+        // one whose installed version the player turned on or off stays that way
+        if (!result.required && !m_enabledByProject.contains(result.projectId)) {
             optionalFiles << FS::PathCombine(result.targetFolder, result.version.fileName);
         }
     }
@@ -572,7 +612,7 @@ void FlameCreationTask::idResolverSucceeded()
             auto fileName = result.version.fileName;
             fileName = FS::RemoveInvalidPathChars(fileName);
             auto relpath = FS::PathCombine(result.targetFolder, fileName);
-            blockedMod.disabled = !result.required && !m_selectedOptionalMods.contains(relpath);
+            blockedMod.disabled = !fileEnabled(result, m_enabledByProject, m_selectedOptionalMods);
 
             blockedMods.append(blockedMod);
 
@@ -613,7 +653,7 @@ void FlameCreationTask::setupDownloadJob()
         fileName = FS::RemoveInvalidPathChars(fileName);
         auto relpath = FS::PathCombine(result.targetFolder, fileName);
 
-        if (!result.required && !m_selectedOptionalMods.contains(relpath)) {
+        if (!fileEnabled(result, m_enabledByProject, m_selectedOptionalMods)) {
             relpath += ".disabled";
         }
 

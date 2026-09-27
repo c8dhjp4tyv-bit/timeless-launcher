@@ -91,6 +91,8 @@ void Technic::SolderPackInstallTask::fileListSucceeded(QByteArray* response)
     if (parse_error.error != QJsonParseError::NoError) {
         qWarning() << "Error while parsing JSON response from Solder at" << parse_error.offset << "reason:" << parse_error.errorString();
         qWarning() << *response;
+        m_filesNetJob.reset();
+        emitFailed(tr("Could not understand pack manifest:\n") + parse_error.errorString());
         return;
     }
     auto obj = doc.object();

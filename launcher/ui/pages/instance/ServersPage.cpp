@@ -39,11 +39,13 @@
 #include "Application.h"
 #include "ServerPingTask.h"
 #include "ui/dialogs/CustomMessageBox.h"
+#include "ui/widgets/InfoFrame.h"
 #include "ui_ServersPage.h"
 
 #include <FileSystem.h>
 #include <io/stream_reader.h>
 #include <minecraft/MinecraftInstance.h>
+#include <minecraft/NbtSizeCheck.h>
 #include <tag_compound.h>
 #include <tag_list.h>
 #include <tag_primitive.h>
@@ -52,10 +54,12 @@
 
 #include <tasks/ConcurrentTask.h>
 #include <QFileSystemWatcher>
+#include <QImage>
 #include <QMenu>
+#include <QRegularExpression>
 #include <QTimer>
 
-static const int COLUMN_COUNT = 3;  // 3 , TBD: latency and other nice things.
+static const int COLUMN_COUNT = 4;  // name, address, players, ping
 
 struct Server {
     // Types
@@ -70,16 +74,9 @@ struct Server {
     }
     Server(nbt::tag_compound& server)
     {
-        std::string addressStr(server["ip"]);
-        m_address = QString::fromUtf8(addressStr.c_str());
-
-        std::string nameStr(server["name"]);
-        m_name = QString::fromUtf8(nameStr.c_str());
-
-        if (server["icon"]) {
-            std::string base64str(server["icon"]);
-            m_icon = QByteArray::fromBase64(base64str.c_str());
-        }
+        m_address = QString::fromStdString(readString(server, "ip"));
+        m_name = QString::fromStdString(readString(server, "name"));
+        m_icon = QByteArray::fromBase64(QByteArray::fromStdString(readString(server, "icon")));
 
         if (server.has_key("acceptTextures", nbt::tag_type::Byte)) {
             bool value = server["acceptTextures"].as<nbt::tag_byte>().get();
@@ -112,13 +109,28 @@ struct Server {
     QByteArray m_icon;
 
     // Data - temporary
-    std::optional<int> m_currentPlayers;  // nullopt if not calculated/calculating
+    std::optional<ServerStatus> m_status;  // nullopt if not queried (yet)
+    QString m_pingError;                   // why the server couldn't be queried, empty if it could
+
+   private:
+    /// Like the game, reads a missing entry or one that isn't a string as an empty string rather than failing over it.
+    static std::string readString(const nbt::tag_compound& server, const std::string& key)
+    {
+        if (!server.has_key(key, nbt::tag_type::String)) {
+            return {};
+        }
+        return server.at(key).as<nbt::tag_string>().get();
+    }
 };
 
 static std::unique_ptr<nbt::tag_compound> parseServersDat(const QString& filename)
 {
     try {
         QByteArray input = FS::read(filename);
+        if (!NbtSizeCheck::fits(input)) {
+            qWarning() << "Unable to parse" << filename << "- it is damaged, or claims more than it holds";
+            return nullptr;
+        }
         std::istringstream foo(std::string(input.constData(), input.size()));
         auto pair = nbt::io::read_compound(foo);
 
@@ -286,7 +298,9 @@ class ServersModel : public QAbstractListModel {
                 case 1:
                     return tr("Address");
                 case 2:
-                    return tr("Online");
+                    return tr("Players");
+                case 3:
+                    return tr("Ping");
             }
         }
 
@@ -327,14 +341,28 @@ class ServersModel : public QAbstractListModel {
                     case 1:
                         return m_servers[row].m_address;
                     case 2:
-                        if (m_servers[row].m_currentPlayers) {
-                            return *m_servers[row].m_currentPlayers;
+                        if (const auto& status = m_servers[row].m_status) {
+                            return playersText(*status);
+                        } else if (!m_servers[row].m_pingError.isEmpty()) {
+                            return tr("Offline");
                         } else {
                             return "...";
                         }
+                    case 3:
+                        if (const auto& status = m_servers[row].m_status; status && status->latency >= 0) {
+                            return tr("%1 ms").arg(status->latency);
+                        }
+                        return QVariant();
                     default:
                         return QVariant();
                 }
+            case Qt::ToolTipRole:
+                if (const auto& status = m_servers[row].m_status) {
+                    return statusToolTip(*status);
+                } else if (!m_servers[row].m_pingError.isEmpty()) {
+                    return tr("Couldn't reach the server: %1").arg(m_servers[row].m_pingError);
+                }
+                return QVariant();
             case ServerPtrRole:
                 if (column == 0)
                     return QVariant::fromValue<void*>((void*)&m_servers[row]);
@@ -405,11 +433,15 @@ class ServersModel : public QAbstractListModel {
         QList<Server> servers;
         auto serversDat = parseServersDat(serversPath());
         if (serversDat) {
-            auto& serversList = serversDat->at("servers").as<nbt::tag_list>();
-            for (auto iter = serversList.begin(); iter != serversList.end(); iter++) {
-                auto& serverTag = (*iter).as<nbt::tag_compound>();
-                Server s(serverTag);
-                servers.append(s);
+            // The tags throw on a missing key or an unexpected type, and nothing would catch that on the way out of a slot.
+            // A file that isn't laid out as expected is treated like one that doesn't parse.
+            try {
+                for (auto& serverTag : serversDat->at("servers").as<nbt::tag_list>()) {
+                    servers.append(Server(serverTag.as<nbt::tag_compound>()));
+                }
+            } catch (const std::exception& e) {
+                qWarning() << "Unable to read the server list" << serversPath() << ":" << e.what();
+                servers.clear();
             }
         }
         m_servers.swap(servers);
@@ -436,8 +468,9 @@ class ServersModel : public QAbstractListModel {
             new ConcurrentTask("Query servers status", APPLICATION->settings()->get("NumberOfConcurrentTasks").toInt()));
         int row = 0;
         for (Server& server : m_servers) {
-            // reset current players
-            server.m_currentPlayers = {};
+            // forget what the last query found
+            server.m_status.reset();
+            server.m_pingError.clear();
             emit dataChanged(index(row, 0), index(row, COLUMN_COUNT - 1));
 
             // Start task to query server status
@@ -446,11 +479,25 @@ class ServersModel : public QAbstractListModel {
             m_currentQueryTask->addTask(Task::Ptr(task));
 
             // Update the model when the task is done
-            connect(task, &Task::finished, this, [this, task, row]() {
-                if (m_servers.size() < row)
+            // The server can be moved or removed while it's being pinged, so follow it rather than its row
+            connect(task, &Task::finished, this, [this, task, serverIndex = QPersistentModelIndex(index(row, 0))]() {
+                if (!serverIndex.isValid()) {
                     return;
-                m_servers[row].m_currentPlayers = task->m_outputOnlinePlayers;
-                emit dataChanged(index(row, 0), index(row, COLUMN_COUNT - 1));
+                }
+                const int serverRow = serverIndex.row();
+                auto& pinged = m_servers[serverRow];
+                if (task->wasSuccessful()) {
+                    const auto& status = task->m_outputStatus;
+                    pinged.m_status = status;
+                    // like the game, take the server's icon if it is a 64 by 64 PNG
+                    QImage icon;
+                    if (icon.loadFromData(status.icon, "PNG") && icon.size() == QSize(64, 64)) {
+                        pinged.m_icon = status.icon;
+                    }
+                } else {
+                    pinged.m_pingError = task->failReason();
+                }
+                emit dataChanged(index(serverRow, 0), index(serverRow, COLUMN_COUNT - 1));
             });
             row++;
         }
@@ -489,6 +536,35 @@ class ServersModel : public QAbstractListModel {
     }
 
    private:
+    static QString playersText(const ServerStatus& status)
+    {
+        return status.maxPlayers > 0 ? QString("%1 / %2").arg(status.onlinePlayers).arg(status.maxPlayers)
+                                     : QString::number(status.onlinePlayers);
+    }
+
+    /// The message of the day in its colors, then what else the server told about itself
+    static QString statusToolTip(const ServerStatus& status)
+    {
+        QStringList details;
+        if (!status.version.isEmpty()) {
+            details << tr("Version: %1").arg(status.version);
+        }
+        details << tr("Players: %1").arg(playersText(status));
+        if (status.latency >= 0) {
+            details << tr("Ping: %1 ms").arg(status.latency);
+        }
+        QString text = details.join('\n');
+
+        const QChar formattingCode(u'\u00A7');
+        static const QRegularExpression s_formattingCodes(QString(formattingCode) + '.');
+        if (!QString(status.motd).remove(s_formattingCodes).trimmed().isEmpty()) {
+            // with the formatting reset after it, so the details don't take on its last color
+            text = status.motd + formattingCode + "r\n\n" + text;
+        }
+        // all of it comes from the server, so none of it may be taken for markup
+        return InfoFrame::renderColorCodes(text.toHtmlEscaped());
+    }
+
     void scheduleSave()
     {
         if (!m_loaded) {

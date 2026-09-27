@@ -139,8 +139,17 @@ void ImportPage::updateState()
             });
             connect(job.get(), &NetJob::succeeded, this, [this, array, addonId, fileId] {
                 qDebug() << "Returned CFURL Json:\n" << array->toStdString().c_str();
-                auto doc = Json::requireDocument(*array);
-                auto data = doc.object()["data"].toObject();
+                QJsonObject data;
+                try {
+                    data = Json::requireDocument(*array).object().value("data").toObject();
+                } catch (const Json::JsonException& e) {
+                    // an exception must not leave a slot, it would take the whole launcher down with it
+                    CustomMessageBox::selectable(this, tr("Error"),
+                                                 tr("Could not read the file's details from CurseForge:\n%1").arg(e.cause()),
+                                                 QMessageBox::Critical)
+                        ->show();
+                    return;
+                }
                 // No way to find out if it's a mod or a modpack before here
                 // And also we need to check if it ends with .zip, instead of any better way
                 auto fileName = data["fileName"].toString();

@@ -37,6 +37,7 @@
 #include "LoggedProcess.h"
 #include <QDebug>
 #include <QStringDecoder>
+#include <utility>
 #include "MessageLevel.h"
 
 LoggedProcess::LoggedProcess(const QStringConverter::Encoding output_codec, QObject* parent)
@@ -57,35 +58,48 @@ LoggedProcess::~LoggedProcess()
     }
 }
 
-QStringList LoggedProcess::reprocess(const QByteArray& data, QStringDecoder& decoder)
+QStringList LoggedProcess::reprocess(const QByteArray& data, QStringDecoder& decoder, QString& leftoverLine)
 {
     QString str = decoder(data);
 
-    if (!m_leftover_line.isEmpty()) {
-        str.prepend(m_leftover_line);
-        m_leftover_line = "";
+    if (!leftoverLine.isEmpty()) {
+        str.prepend(leftoverLine);
+        leftoverLine = "";
     }
 
     auto lines = str.remove(QChar::CarriageReturn).split(QChar::LineFeed);
 
-    m_leftover_line = lines.takeLast();
+    leftoverLine = lines.takeLast();
     return lines;
+}
+
+void LoggedProcess::flushLeftoverLines()
+{
+    // output that doesn't end in a line break still ends its last line when the process is gone
+    if (!m_outLeftoverLine.isEmpty()) {
+        emit log({ std::exchange(m_outLeftoverLine, QString()) }, MessageLevel::StdOut);
+    }
+    if (!m_errLeftoverLine.isEmpty()) {
+        emit log({ std::exchange(m_errLeftoverLine, QString()) }, MessageLevel::StdErr);
+    }
 }
 
 void LoggedProcess::on_stdErr()
 {
-    auto lines = reprocess(readAllStandardError(), m_err_decoder);
+    auto lines = reprocess(readAllStandardError(), m_err_decoder, m_errLeftoverLine);
     emit log(lines, MessageLevel::StdErr);
 }
 
 void LoggedProcess::on_stdOut()
 {
-    auto lines = reprocess(readAllStandardOutput(), m_out_decoder);
+    auto lines = reprocess(readAllStandardOutput(), m_out_decoder, m_outLeftoverLine);
     emit log(lines, MessageLevel::StdOut);
 }
 
 void LoggedProcess::on_exit(int exit_code, QProcess::ExitStatus status)
 {
+    flushLeftoverLines();
+
     // save the exit code
     m_exit_code = exit_code;
 

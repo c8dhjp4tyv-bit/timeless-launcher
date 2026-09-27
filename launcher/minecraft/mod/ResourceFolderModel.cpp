@@ -210,40 +210,46 @@ bool ResourceFolderModel::installResource(QString originalPath)
 void ResourceFolderModel::installResourceWithFlameMetadata(const QString& path, ModPlatform::IndexedVersion& vers)
 {
     auto install = [this, path] { installResource(path); };
-    if (vers.addonId.isValid()) {
-        ModPlatform::IndexedPack pack{
-            .addonId = vers.addonId,
-            .provider = ModPlatform::ResourceProvider::FLAME,
-        };
-
-        auto [job, response] = FlameAPI::get().getProject(vers.addonId.toString());
-        connect(job.get(), &Task::failed, this, install);
-        connect(job.get(), &Task::aborted, this, install);
-        connect(job.get(), &Task::succeeded, this, [response, this, &vers, install, &pack] {
-            QJsonParseError parseError{};
-            QJsonDocument doc = QJsonDocument::fromJson(*response, &parseError);
-            if (parseError.error != QJsonParseError::NoError) {
-                qWarning() << "Error while parsing JSON response for mod info at" << parseError.offset
-                           << "reason:" << parseError.errorString();
-                qDebug() << *response;
-                return;
-            }
-            try {
-                auto obj = Json::requireObject(Json::requireObject(doc), "data");
-                FlameMod::loadIndexedPack(pack, obj);
-            } catch (const JSONValidationError& e) {
-                qDebug() << doc;
-                qWarning() << "Error while reading mod info:" << e.cause();
-            }
-            LocalResourceUpdateTask updateMetadata(indexDir(), pack, vers);
-            connect(&updateMetadata, &Task::finished, this, install);
-            updateMetadata.start();
-        });
-
-        job->start();
-    } else {
+    if (!vers.addonId.isValid()) {
         install();
+        return;
     }
+
+    ModPlatform::IndexedPack pack{
+        .addonId = vers.addonId,
+        .provider = ModPlatform::ResourceProvider::FLAME,
+    };
+
+    auto [job, response] = FlameAPI::get().getProject(vers.addonId.toString());
+    connect(job.get(), &Task::failed, this, install);
+    connect(job.get(), &Task::aborted, this, install);
+    // The answer arrives after this function has returned, so the handler works on copies of its own.
+    connect(job.get(), &Task::succeeded, this, [this, response, pack, version = vers, install]() mutable {
+        QJsonParseError parseError{};
+        QJsonDocument doc = QJsonDocument::fromJson(*response, &parseError);
+        if (parseError.error != QJsonParseError::NoError) {
+            qWarning() << "Error while parsing JSON response for mod info at" << parseError.offset << "reason:" << parseError.errorString();
+            qDebug() << *response;
+            // install it without metadata, as when the lookup fails
+            install();
+            return;
+        }
+        try {
+            auto obj = Json::requireObject(Json::requireObject(doc), "data");
+            FlameMod::loadIndexedPack(pack, obj);
+        } catch (const JSONValidationError& e) {
+            qDebug() << doc;
+            qWarning() << "Error while reading mod info:" << e.cause();
+        }
+        LocalResourceUpdateTask updateMetadata(indexDir(), pack, version);
+        connect(&updateMetadata, &Task::finished, this, install);
+        updateMetadata.start();
+    });
+    // Nothing else holds on to the job, and a job whose last reference is dropped is destroyed before it can finish.
+    // This connection keeps it until then, and lets go of it once it has fired.
+    connect(job.get(), &Task::finished, this, [job] {}, Qt::SingleShotConnection);
+
+    job->start();
 }
 
 bool ResourceFolderModel::uninstallResource(const QString& fileName, bool preserveMetadata)
@@ -319,6 +325,11 @@ bool ResourceFolderModel::setResourceEnabled(const QModelIndexList& indexes, Ena
         }
     }
 
+    return applyEnableAction(indexes, action);
+}
+
+bool ResourceFolderModel::applyEnableAction(const QModelIndexList& indexes, EnableAction action)
+{
     if (indexes.isEmpty()) {
         return true;
     }
@@ -911,7 +922,7 @@ void ResourceFolderModel::applyUpdates(QSet<QString>& currentSet, QSet<QString>&
 
             if (newResource->dateTimeChanged() == currentResource->dateTimeChanged()) {
                 // no significant change
-                bool hadIssues = !currentResource->hasIssues();
+                bool hadIssues = currentResource->hasIssues();
                 currentResource->updateIssues(m_instance);
 
                 if (hadIssues != currentResource->hasIssues()) {

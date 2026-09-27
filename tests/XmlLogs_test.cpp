@@ -85,6 +85,48 @@ class XmlLogParseTest : public QObject {
         QCOMPARE(timestamps[0].msecsTo(timestamps[1]), 1998);
     }
 
+    void parseThrowable()
+    {
+        // Shortened from testdata/TestLogs/TerraFirmaGreg-Modern-forge.xml.log: an event can carry the exception that was logged
+        // with the message, stack trace and all.
+        const QStringList trace = {
+            "com.google.gson.JsonParseException: com.google.gson.stream.MalformedJsonException: Use JsonReader.setLenient(true)",
+            "\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.GsonHelper.m_13780_(GsonHelper.java:526)",
+            "Caused by: com.google.gson.stream.MalformedJsonException: Use JsonReader.setLenient(true) to accept malformed JSON",
+            "\tat MC-BOOTSTRAP/com.google.gson@2.10/com.google.gson.stream.JsonReader.syntaxError(JsonReader.java:1657)",
+            "\t... 13 more",
+        };
+        QStringList lines = {
+            R"(  <log4j:Event logger="net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener" timestamp="1745005487560" level="ERROR" thread="Worker-ResourceReload-4">)",
+            R"(    <log4j:Message><![CDATA[Couldn't parse data file tfc:field_guide/ru_ru/entries/tfg_ores/surface_copper]]></log4j:Message>)",
+            "    <log4j:Throwable><![CDATA[" + trace.first(),
+        };
+        lines << trace.mid(1);
+        lines << R"(]]></log4j:Throwable>)" << R"(  </log4j:Event>)";
+        // the next event has none
+        lines << R"(  <log4j:Event logger="de.keksuccino.fancymenu.util.window.WindowHandler" timestamp="1745005487588" level="INFO">)"
+              << R"(    <log4j:Message><![CDATA[[FANCYMENU] Custom window icon successfully updated!]]></log4j:Message>)"
+              << R"(  </log4j:Event>)";
+
+        LogParser parser;
+        QList<LogParser::LogEntry> entries;
+        for (const auto& line : lines) {
+            parser.appendLine(line);
+
+            for (const auto& item : parser.parseAvailable()) {
+                QVERIFY(std::holds_alternative<LogParser::LogEntry>(item));
+                entries.append(std::get<LogParser::LogEntry>(item));
+            }
+        }
+
+        QCOMPARE(entries.length(), 2);
+        QCOMPARE(entries[0].level, MessageLevel::Error);
+        QCOMPARE(entries[0].message, "Couldn't parse data file tfc:field_guide/ru_ru/entries/tfg_ores/surface_copper");
+        QCOMPARE(entries[0].throwable, trace.join('\n'));
+        QCOMPARE(entries[1].message, "[FANCYMENU] Custom window icon successfully updated!");
+        QVERIFY(entries[1].throwable.isEmpty());
+    }
+
     void parseXml_data()
     {
         QString source = QFINDTESTDATA("testdata/TestLogs");

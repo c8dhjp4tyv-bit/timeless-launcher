@@ -171,7 +171,8 @@ void InstanceImportTask::processZipPack()
         return true;
     };
     if (!packZip.parse(detectInstance)) {
-        emitFailed(tr("Unable to open supplied modpack zip file."));
+        emitFailed(tr("Unable to open supplied modpack zip file: %1. It may be damaged or incomplete, as when a download is cut short.")
+                       .arg(packZip.errorString()));
         return;
     }
     if (m_modpackType == ModpackType::Unknown) {

@@ -37,20 +37,22 @@ auto ExportToZipTask::exportZip() -> ZipResult
         return ZipResult(tr("Folder doesn't exist"));
     }
     if (!m_output.open()) {
-        return ZipResult(tr("Could not create file"));
+        return ZipResult(tr("Could not create %1").arg(m_outputPath));
     }
 
     for (auto fileName : m_extraFiles.keys()) {
-        if (m_buildZipFuture.isCanceled())
+        if (m_abortRequested) {
             return ZipResult();
+        }
         if (!m_output.addFile(fileName, m_extraFiles[fileName])) {
             return ZipResult(tr("Could not add:") + fileName);
         }
     }
 
     for (const QFileInfo& file : m_files) {
-        if (m_buildZipFuture.isCanceled())
+        if (m_abortRequested) {
             return ZipResult();
+        }
 
         auto absolute = file.absoluteFilePath();
         auto relative = m_dir.relativeFilePath(absolute);
@@ -90,6 +92,7 @@ void ExportToZipTask::finish()
 bool ExportToZipTask::abort()
 {
     if (m_buildZipFuture.isRunning()) {
+        m_abortRequested = true;
         m_buildZipFuture.cancel();
         // NOTE: Here we don't do `emitAborted()` because it will be done when `m_build_zip_future` actually cancels, which may not occur
         // immediately.

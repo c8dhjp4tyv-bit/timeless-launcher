@@ -106,7 +106,8 @@ bool processFolder(WorldSave& save, ProcessingLevel level)
 static std::tuple<bool, QString, bool> contains_level_dat(QString fileName)
 {
     MMCZip::ArchiveReader zip(fileName);
-    if (!zip.collectFiles()) {
+    // a world that breaks off, as when its download was cut short, is still listed, from the files before that
+    if (!zip.collectFiles() && !zip.endedEarly()) {
         return std::make_tuple(false, "", false);
     }
     bool saves = false;

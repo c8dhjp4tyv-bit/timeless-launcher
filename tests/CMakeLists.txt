@@ -64,6 +64,9 @@ ecm_add_test(CatPack_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR
 ecm_add_test(XmlLogs_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME XmlLogs)
 
+ecm_add_test(LogModel_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME LogModel)
+
 ecm_add_test(Commandline_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME Commandline)
 
@@ -75,3 +78,48 @@ ecm_add_test(ArchiveReader_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION
 
 ecm_add_test(ModrinthAPI_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ModrinthAPI)
+
+ecm_add_test(ModParse_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ModParse)
+
+ecm_add_test(MMCTime_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME MMCTime)
+
+ecm_add_test(FlameManifest_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME FlameManifest)
+
+ecm_add_test(ColorCodes_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ColorCodes)
+
+ecm_add_test(DuplicateMods_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME DuplicateMods)
+
+ecm_add_test(World_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME World)
+
+ecm_add_test(McClient_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME McClient)
+
+ecm_add_test(CrashHints_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME CrashHints)
+
+ecm_add_test(LoggedProcess_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME LoggedProcess)
+
+ecm_add_test(ExtractZip_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ExtractZip)
+
+ecm_add_test(ServerStatus_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ServerStatus)
+
+ecm_add_test(ModBisect_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ModBisect)
+
+ecm_add_test(Overrides_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME Overrides)
+
+ecm_add_test(ModrinthUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ModrinthUpdate)
+
+ecm_add_test(FlameUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME FlameUpdate)
