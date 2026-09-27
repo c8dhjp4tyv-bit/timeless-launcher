@@ -498,7 +498,7 @@ void WorldList::loadWorldsAsync()
 
             // the list may be gone by the time this is done, so it can't be what the result is sent to
             QMetaObject::invokeMethod(
-                qApp,
+                QCoreApplication::instance(),
                 [self, w, row, file]() {
                     if (self && row < self->m_worlds.size() && self->m_worlds[row].container() == file) {
                         self->m_worlds[row] = w;

@@ -22,7 +22,7 @@ class ModrinthCreationTask final : public InstanceTask {
     struct File {
         QString path;
 
-        QCryptographicHash::Algorithm hashAlgorithm;
+        QCryptographicHash::Algorithm hashAlgorithm = QCryptographicHash::Sha512;
         QByteArray hash;
         QQueue<QUrl> downloads;
         bool required = true;
