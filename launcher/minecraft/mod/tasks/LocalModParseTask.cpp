@@ -494,10 +494,10 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
             // version, and the mods nested in it
             provide(details, details.mod_id, details.version);
             for (const auto& provided : modInfo.value("provides").toArray()) {
-                const auto object = provided.toObject();
-                const auto id = provided.isObject() ? object.value("id").toString() : provided.toString();
+                const auto providedObject = provided.toObject();
+                const auto id = provided.isObject() ? providedObject.value("id").toString() : provided.toString();
                 if (!id.isEmpty()) {
-                    provide(details, id.section(':', -1), object.value("version").toString(details.version));
+                    provide(details, id.section(':', -1), providedObject.value("version").toString(details.version));
                 }
             }
             for (const auto& jar : modInfo.value("jars").toArray()) {
