@@ -137,6 +137,13 @@ QStringList CrashHints::find(const QString& log, int javaMajorVersion)
         hints << tr("The game ran out of memory. Raise the maximum memory usage in the Java tab of this instance's settings.");
     }
 
+    // A full disk, as Java reports it on Linux and macOS, and on Windows in English
+    if (log.contains("No space left on device") || log.contains("There is not enough space on the disk")) {
+        hints << tr(
+            "The disk ran out of space while the game was writing to it. Free up some space, then start the game again. If a "
+            "world doesn't load properly afterwards, restore it from a backup with Restore on the Worlds page.");
+    }
+
     // Graphics drivers, going by GLFW's errors for a missing API (65542) and a missing version (65543), or LWJGL 2's
 
     static const QRegularExpression s_noOpenGl(

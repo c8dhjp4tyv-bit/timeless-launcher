@@ -81,6 +81,17 @@ class CrashHintsTest : public QObject {
             << "Exception in thread \"Worker-Main-3\" java.lang.OutOfMemoryError: GC overhead limit exceeded\n"
             << 8 << QList<QStringList>{ { "ran out of memory" } };
 
+        QTest::newRow("disk full") << "[12:00:00] [Server thread/ERROR]: Failed to save chunk [3, -7]\n"
+                                      "java.io.IOException: No space left on device\n"
+                                      "\tat java.base/sun.nio.ch.FileDispatcherImpl.write0(Native Method)\n"
+                                      "[12:00:01] [Server thread/ERROR]: Failed to save chunk [4, -7]\n"
+                                      "java.io.IOException: No space left on device\n"
+                                   << 21 << QList<QStringList>{ { "ran out of space", "Free up some space", "Restore" } };
+
+        QTest::newRow("disk full on Windows") << "java.io.IOException: There is not enough space on the disk\n"
+                                                 "\tat java.base/java.io.RandomAccessFile.writeBytes(Native Method)\n"
+                                              << 21 << QList<QStringList>{ { "ran out of space" } };
+
         QTest::newRow("heap too large to reserve") << "Error occurred during initialization of VM\n"
                                                       "Could not reserve enough space for 4194304KB object heap\n"
                                                    << 8 << QList<QStringList>{ { "Lower the maximum memory", "64-bit" } };
