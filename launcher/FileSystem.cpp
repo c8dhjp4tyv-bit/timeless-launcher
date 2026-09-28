@@ -1836,10 +1836,13 @@ QString getUniqueResourceName(const QString& filePath)
 bool removeFiles(QStringList listFile)
 {
     bool ret = true;
-    // For each file
-    for (int i = 0; i < listFile.count(); i++) {
-        // Remove
-        ret = ret && QFile::remove(listFile.at(i));
+    for (const auto& file : listFile) {
+        // The folders an archive lists with its files stay, and neither they nor a file that can't be removed keep the
+        // files after them from going.
+        if (file.endsWith('/') || QFileInfo(file).isDir()) {
+            continue;
+        }
+        ret = QFile::remove(file) && ret;
     }
     return ret;
 }

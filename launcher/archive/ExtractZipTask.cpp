@@ -99,6 +99,8 @@ auto ExtractZipTask::extractZip() -> ZipResult
             }
 
             if (!f->writeFile(ext, target_file_path, target)) {
+                // what got written of it goes along with the files before it
+                extracted.append(target_file_path);
                 result = ZipResult(tr("Failed to extract file %1 to %2").arg(original_name, target_file_path));
                 return false;
             }
@@ -107,6 +109,8 @@ auto ExtractZipTask::extractZip() -> ZipResult
             qDebug() << "Extracted file" << relative_file_name << "to" << target_file_path;
             return true;
         })) {
+        // closing the writer lets go of the file that failed, which can't be removed while it is open on Windows
+        extPtr.reset();
         FS::removeFiles(extracted);
         return result.has_value() ? result : ZipResult(tr("Failed to parse file %1").arg(fileName));
     }

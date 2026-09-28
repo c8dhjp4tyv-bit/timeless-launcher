@@ -364,6 +364,27 @@ class FileSystemTest : public QObject {
         QCOMPARE(FS::read(FS::PathCombine(source, conflicting)), QByteArray("new"));
     }
 
+    void test_removeFiles()
+    {
+        // What an extraction that failed part way removes again: the files it extracted, listed in the archive's order
+        // with its folders, which come first in most archives.
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        FS::write(temp.filePath("config/sodium.json"), "{}");
+        FS::write(temp.filePath("options.txt"), "fov:70");
+        FS::write(temp.filePath("kept.txt"), "not extracted");
+
+        const QStringList extracted{ temp.filePath("config") + '/', temp.filePath("config/sodium.json"), temp.filePath("gone.txt"),
+                                     temp.filePath("options.txt") };
+
+        // gone.txt is no longer there to be removed
+        QVERIFY(!FS::removeFiles(extracted));
+        QVERIFY(!QFileInfo::exists(temp.filePath("config/sodium.json")));
+        QVERIFY(!QFileInfo::exists(temp.filePath("options.txt")));
+        QVERIFY(QFileInfo(temp.filePath("config")).isDir());
+        QVERIFY(QFileInfo::exists(temp.filePath("kept.txt")));
+    }
+
     void test_getDesktop() { QCOMPARE(FS::getDesktopDir(), QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)); }
 
     // In the expected results, ~ stands for a double quote, which moc can't take in a raw string literal.

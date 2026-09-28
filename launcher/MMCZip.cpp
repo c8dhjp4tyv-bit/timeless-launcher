@@ -235,6 +235,8 @@ std::optional<QStringList> extractSubDir(ArchiveReader* zip, const QString& subd
             }
             if (!f->writeFile(ext, target_file_path, target)) {
                 qWarning() << "Failed to extract file" << original_name << "to" << target_file_path;
+                // what got written of it goes along with the files before it
+                extracted.append(target_file_path);
                 return false;
             }
 
@@ -244,6 +246,8 @@ std::optional<QStringList> extractSubDir(ArchiveReader* zip, const QString& subd
             return true;
         })) {
         qWarning() << "Failed to parse file" << zip->getZipName();
+        // closing the writer lets go of the file that failed, which can't be removed while it is open on Windows
+        extPtr.reset();
         FS::removeFiles(extracted);
         return std::nullopt;
     }
