@@ -35,10 +35,12 @@
 
 #pragma once
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
 
+#include "minecraft/mod/GameVersionRequirement.h"
 #include "modplatform/ModIndex.h"
 
 struct ModLicense {
@@ -148,6 +150,39 @@ struct ModDetails {
     /* Whether Java can't open the file as a jar, as when its download was cut short or a web page was saved in its place */
     bool damaged = false;
 
+    /* The versions of Minecraft the mod's own metadata says it works with, which its mod loader holds it to */
+    GameVersionRequirement minecraft;
+
+    /* The IDs of the mods the mod loader won't load this one without, as its metadata lists them, the loader's own included */
+    QStringList requiredMods;
+
+    /* The versions of those the mod needs, for the ones it names versions of */
+    QHash<QString, GameVersionRequirement> requiredVersions;
+
+    /* Every ID the mod loader knows the file by: the mod's own, those its metadata says it provides, and those of the mods nested
+       in it */
+    QStringList providedMods;
+
+    /* The versions the file provides each of those in */
+    QHash<QString, QStringList> providedVersions;
+
+    /* Of those, the ones the file's own metadata names, and their versions: unlike the mods nested in the file, which it may leave
+       out, the mod loader loads these whenever the file is enabled */
+    QHash<QString, QStringList> ownVersions;
+
+    /* The IDs of the mods the mod loader won't load along with this one, as its metadata lists them, each with the versions of it
+       that it won't, unset for any version */
+    QHash<QString, GameVersionRequirement> incompatibleMods;
+
+    /* The jars nested in the file that its metadata lists, which the mod loader loads as mods of their own */
+    QStringList nestedJars;
+
+    /* Whether a mod nested in the file couldn't be read, so that what the file provides isn't all known */
+    bool unreadNestedMods = false;
+
+    /* Whether the mod loader leaves the mod out of the game, as Fabric and Quilt do a mod made only for servers */
+    bool serverOnly = false;
+
     ModDetails() = default;
 
     /** Metadata should be handled manually to properly set the mod status. */
@@ -165,6 +200,16 @@ struct ModDetails {
         , dependencies(other.dependencies)
         , loaders(other.loaders)
         , damaged(other.damaged)
+        , minecraft(other.minecraft)
+        , requiredMods(other.requiredMods)
+        , requiredVersions(other.requiredVersions)
+        , providedMods(other.providedMods)
+        , providedVersions(other.providedVersions)
+        , ownVersions(other.ownVersions)
+        , incompatibleMods(other.incompatibleMods)
+        , nestedJars(other.nestedJars)
+        , unreadNestedMods(other.unreadNestedMods)
+        , serverOnly(other.serverOnly)
     {}
 
     ModDetails& operator=(const ModDetails& other) = default;

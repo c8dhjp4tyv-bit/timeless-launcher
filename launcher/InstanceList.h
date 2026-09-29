@@ -120,7 +120,9 @@ class InstanceList : public QAbstractListModel {
     bool trashInstance(const InstanceId& id);
     bool trashedSomething() const;
     bool undoTrashInstance();
-    void deleteInstance(const InstanceId& id);
+    /// Deletes the instance's files for good, and returns whether they all went, which they don't when another program has one
+    /// of them open; what is left stays where it was
+    bool deleteInstance(const InstanceId& id);
 
     // Wrap an instance creation task in some more task machinery and make it ready to be used
     Task* wrapInstanceTask(InstanceTask* task);

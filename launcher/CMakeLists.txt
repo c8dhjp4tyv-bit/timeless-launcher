@@ -255,6 +255,8 @@ set(MINECRAFT_SOURCES
     minecraft/launch/CreateGameFolders.h
     minecraft/launch/CheckModFiles.cpp
     minecraft/launch/CheckModFiles.h
+    minecraft/launch/EnsureAvailableDiskSpace.cpp
+    minecraft/launch/EnsureAvailableDiskSpace.h
     minecraft/launch/EnsureAvailableMemory.cpp
     minecraft/launch/EnsureAvailableMemory.h
     minecraft/launch/EnsureOfflineLibraries.cpp
@@ -325,6 +327,8 @@ set(MINECRAFT_SOURCES
     minecraft/WorldTasks.h
     minecraft/WorldTasks.cpp
 
+    minecraft/mod/GameVersionRequirement.h
+    minecraft/mod/GameVersionRequirement.cpp
     minecraft/mod/MetadataHandler.h
     minecraft/mod/Mod.h
     minecraft/mod/Mod.cpp

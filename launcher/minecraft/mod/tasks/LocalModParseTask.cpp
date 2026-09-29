@@ -1,5 +1,6 @@
 #include "LocalModParseTask.h"
 
+#include <archive.h>
 #include <qdcss.h>
 #include <toml++/toml.h>
 #include <QFile>
@@ -7,7 +8,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QRegularExpression>
 #include <QString>
 #include <algorithm>
 
@@ -15,8 +15,6 @@
 #include "archive/ArchiveReader.h"
 #include "minecraft/mod/ModDetails.h"
 #include "settings/INIFile.h"
-
-static const QRegularExpression s_newlineRegex("\r\n|\n|\r");
 
 namespace {
 // Fabric and Quilt both key an icon map by the width of each image: {"32": "icon32.png", "128": "icon128.png"}
@@ -36,6 +34,32 @@ QString largestIcon(const QJsonObject& icons)
         bestIcon = icons.begin().value().toString();
     }
     return bestIcon;
+}
+
+/// Notes that the file gives the mod loader the mod with that ID, in that version
+void provide(ModDetails& details, const QString& id, const QString& version)
+{
+    if (!details.providedMods.contains(id)) {
+        details.providedMods << id;
+    }
+    details.providedVersions[id] << version;
+}
+
+/// A string, or an array of strings, as Fabric and Quilt give versions; anything else, or an array holding more than strings,
+/// gives nothing
+QStringList stringsOf(const QJsonValue& value)
+{
+    if (value.isString()) {
+        return { value.toString() };
+    }
+    QStringList strings;
+    for (const auto& item : value.toArray()) {
+        if (!item.isString()) {
+            return {};
+        }
+        strings << item.toString();
+    }
+    return strings;
 }
 }  // namespace
 
@@ -269,6 +293,12 @@ ModDetails ReadMCModTOML(QByteArray contents)
                 continue;
             }
             auto modId = (*dep_table)["modId"].as_string();
+            // the versions of Minecraft the mod works with, which the loader holds it to when the dependency is required
+            if (modId && modId->get() == "minecraft" && (isNeoForgeDep(dep_table) || isForgeDep(dep_table))) {
+                if (auto* range = (*dep_table)["versionRange"].as_string()) {
+                    details.minecraft = GameVersionRequirement::fromMaven(QString::fromStdString(range->get()));
+                }
+            }
             if (!modId || ignoreModIds.contains(QString::fromStdString(modId->get()))) {
                 continue;
             }
@@ -277,6 +307,51 @@ ModDetails ReadMCModTOML(QByteArray contents)
             }
         }
     };
+
+    // every mod in the file, which the loader knows it by, and the mods each can't be loaded without on a client
+    for (const auto& mod : *tomlModsArr) {
+        if (const auto* table = mod.as_table()) {
+            if (const auto* modId = (*table)["modId"].as_string()) {
+                const auto* version = (*table)["version"].as_string();
+                provide(details, QString::fromStdString(modId->get()), version ? QString::fromStdString(version->get()) : QString());
+            }
+        }
+    }
+    if (const auto* dependencies = tomlData["dependencies"].as_table()) {
+        for (const auto& modId : std::as_const(details.providedMods)) {
+            const auto* list = (*dependencies)[modId.toStdString()].as_array();
+            if (list == nullptr) {
+                continue;
+            }
+            for (const auto& dependency : *list) {
+                const auto* table = dependency.as_table();
+                if (table == nullptr) {
+                    continue;
+                }
+                const auto* id = (*table)["modId"].as_string();
+                // Forge marks a mod the loader stops without as mandatory, and NeoForge as required
+                const auto* mandatory = (*table)["mandatory"].as_boolean();
+                const auto* type = (*table)["type"].as_string();
+                const auto* side = (*table)["side"].as_string();
+                const bool required = (mandatory != nullptr && mandatory->get()) || (type != nullptr && type->get() == "required");
+                const bool onlyOnServers = side != nullptr && side->get() == "SERVER";
+                if (id != nullptr && required && !onlyOnServers) {
+                    details.requiredMods << QString::fromStdString(id->get());
+                    if (const auto* range = (*table)["versionRange"].as_string()) {
+                        details.requiredVersions.insert(details.requiredMods.last(),
+                                                        GameVersionRequirement::fromMaven(QString::fromStdString(range->get())));
+                    }
+                }
+                // NeoForge won't load the mod along with one it says it is incompatible with, and only warns of a discouraged one
+                if (id != nullptr && type != nullptr && type->get() == "incompatible" && !onlyOnServers) {
+                    const auto* range = (*table)["versionRange"].as_string();
+                    details.incompatibleMods.insert(
+                        QString::fromStdString(id->get()),
+                        GameVersionRequirement::fromMaven(range ? QString::fromStdString(range->get()) : QString()));
+                }
+            }
+        }
+    }
 
     if (tomlData.contains("dependencies")) {
         auto depValue = tomlData["dependencies"];
@@ -374,8 +449,40 @@ ModDetails ReadFabricModInfo(QByteArray contents)
                         details.dependencies.append(key);
                     }
                 }
+                // the versions of Minecraft the mod works with: a predicate, or a list of them any one of which will do
+                details.minecraft = GameVersionRequirement::fromFabric(stringsOf(obj.value("minecraft")));
             }
         }
+
+        // what the loader needs for the mod, in which versions, and what the file gives it besides the mod: the IDs the mod says it
+        // provides, in the mod's version, and the mods nested in it
+        const auto depends = object.value("depends").toObject();
+        details.requiredMods = depends.keys();
+        for (auto it = depends.begin(); it != depends.end(); ++it) {
+            if (const auto versions = GameVersionRequirement::fromFabric(stringsOf(it.value())); versions.isSet()) {
+                details.requiredVersions.insert(it.key(), versions);
+            }
+        }
+        // the mods the loader won't load along with this one, in the versions given, where an empty list gives none
+        const auto breaks = object.value("breaks").toObject();
+        for (auto it = breaks.begin(); it != breaks.end(); ++it) {
+            if (const auto versions = stringsOf(it.value()); !versions.isEmpty()) {
+                details.incompatibleMods.insert(it.key(), GameVersionRequirement::fromFabric(versions));
+            }
+        }
+        if (!details.mod_id.isEmpty()) {
+            for (const auto& id : stringsOf(object.value("provides"))) {
+                provide(details, id, details.version);
+            }
+        }
+        for (const auto& jar : object.value("jars").toArray()) {
+            details.nestedJars << jar.toObject().value("file").toString();
+        }
+        details.serverOnly = object.value("environment").toString() == "server";
+    }
+    if (!details.mod_id.isEmpty()) {
+        details.providedMods.prepend(details.mod_id);
+        details.providedVersions[details.mod_id].prepend(details.version);
     }
     return details;
 }
@@ -396,6 +503,21 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
 
             details.mod_id = Json::requireString(modInfo.value("id"), "Mod ID");
             details.version = Json::requireString(modInfo.value("version"), "Mod version");
+
+            // what the file gives the loader besides the mod: the IDs the mod says it provides, each alone or in an object with its
+            // version, and the mods nested in it
+            provide(details, details.mod_id, details.version);
+            for (const auto& provided : modInfo.value("provides").toArray()) {
+                const auto providedObject = provided.toObject();
+                const auto id = provided.isObject() ? providedObject.value("id").toString() : provided.toString();
+                if (!id.isEmpty()) {
+                    provide(details, id.section(':', -1), providedObject.value("version").toString(details.version));
+                }
+            }
+            for (const auto& jar : modInfo.value("jars").toArray()) {
+                details.nestedJars << jar.toString();
+            }
+            details.serverOnly = object.value("minecraft").toObject().value("environment").toString() == "dedicated_server";
 
             auto modMetadata = modInfo.value("metadata").toObject();
 
@@ -458,14 +580,43 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
                         continue;
                     }
                     modId = dependencyObject.value("id").toString();
+                    // the versions of Minecraft the mod works with, unless it only needs them in some case; versions given as an
+                    // object of any and all aren't read, and hold the mod to nothing
+                    if (modId == "minecraft" && !dependencyObject.contains("unless")) {
+                        details.minecraft = GameVersionRequirement::fromFabric(stringsOf(dependencyObject.value("versions")));
+                    }
                 } else {
                     // an array is satisfied by any one of its entries, so none of them is required on its own
                     continue;
                 }
                 // the id may be written as mavenGroup:modId, but mods are matched by their bare id
                 modId = modId.section(':', -1);
+                // one needed unless another mod is there may not be needed at all
+                if (!modId.isEmpty() && !dependency.toObject().contains("unless")) {
+                    details.requiredMods << modId;
+                    const auto versions = GameVersionRequirement::fromFabric(stringsOf(dependency.toObject().value("versions")));
+                    if (versions.isSet()) {
+                        details.requiredVersions.insert(modId, versions);
+                    }
+                }
                 if (!modId.isEmpty() && modId != "minecraft" && !modId.startsWith("quilt_")) {
                     details.dependencies.append(modId);
+                }
+            }
+
+            // The mods the loader won't load along with this one: an ID alone for any version of it, or an object with the versions.
+            // One it is only warned of, one that is fine along with another mod, and an array, which is only incompatible along with
+            // all of the mods in it, aren't. Neither is one whose versions are an object of any and all, which aren't read.
+            for (const auto& broken : modInfo.value("breaks").toArray()) {
+                const auto brokenObject = broken.toObject();
+                if (broken.isObject() && (brokenObject.value("optional").toBool() || brokenObject.contains("unless") ||
+                                          brokenObject.value("versions").isObject())) {
+                    continue;
+                }
+                const auto modId = (broken.isObject() ? brokenObject.value("id").toString() : broken.toString()).section(':', -1);
+                const auto versions = stringsOf(brokenObject.value("versions"));
+                if (!modId.isEmpty() && (!brokenObject.contains("versions") || !versions.isEmpty())) {
+                    details.incompatibleMods.insert(modId, GameVersionRequirement::fromFabric(versions));
                 }
             }
         }
@@ -559,12 +710,11 @@ bool process(Mod& mod, ProcessingLevel level)
     }
 }
 
-bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
+namespace {
+
+/// Reads the metadata of the mod in the archive into the details, and returns whether there was any
+bool readMetadata(MMCZip::ArchiveReader& zip, ModDetails& details)
 {
-    ModDetails details;
-
-    MMCZip::ArchiveReader zip(mod.fileinfo().filePath());
-
     bool baseForgePopulated = false;
     bool isNilMod = false;
     bool isValid = false;
@@ -592,12 +742,13 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
                 return true;
             }
             if (filePath == "META-INF/MANIFEST.MF") {
-                // quick and dirty line-by-line parser
-                auto manifestLines = QString(file->readAll()).split(s_newlineRegex);
+                // quick and dirty line-by-line parser, which every jar, and every jar nested in one, goes through
+                const auto manifest = QString::fromUtf8(file->readAll());
                 manifestVersion = "";
-                for (auto& line : manifestLines) {
-                    if (line.startsWith("Implementation-Version: ", Qt::CaseInsensitive)) {
-                        manifestVersion = line.remove("Implementation-Version: ", Qt::CaseInsensitive);
+                for (auto line : QStringView(manifest).tokenize(u'\n')) {
+                    line = line.trimmed();
+                    if (line.startsWith(u"Implementation-Version: ", Qt::CaseInsensitive)) {
+                        manifestVersion = line.sliced(24).toString();
                         break;
                     }
                 }
@@ -667,11 +818,101 @@ bool processZIP(Mod& mod, [[maybe_unused]] ProcessingLevel level)
         details = ReadNilModInfo(nilData, nilFilePath);
         isValid = true;
     }
-    if (isValid) {
-        mod.setDetails(details);
-        return true;
+    // a Forge mod whose version comes from the manifest provides itself in that version
+    for (auto& versions : details.providedVersions) {
+        for (auto& version : versions) {
+            if (version == "${file.jarVersion}") {
+                version = details.version;
+            }
+        }
     }
-    return false;  // no valid mod found in archive
+    // what the metadata names, before the mods nested in the file are added
+    details.ownVersions = details.providedVersions;
+    return isValid;
+}
+
+/// How many levels of mods nested in mods are read, which is more than any mod nests them
+constexpr int g_nestedModLevels = 4;
+
+void readNestedMods(MMCZip::ArchiveReader& zip, ModDetails& details, int levels);
+
+/// Adds what a jar nested in a mod's file gives the mod loader to the mod's details
+void readNestedMod(const QByteArray& jar, const QString& name, ModDetails& details, int levels)
+{
+    MMCZip::ArchiveReader nested(jar, name);
+    ModDetails nestedDetails;
+    if (!readMetadata(nested, nestedDetails)) {
+        // a library that isn't a mod gives the loader nothing, while one that couldn't be read may have
+        details.unreadNestedMods |= !nested.errorString().isEmpty();
+        return;
+    }
+    if (nestedDetails.mod_id.isEmpty() || nested.endedEarly()) {
+        details.unreadNestedMods = true;
+        return;
+    }
+    // the loader leaves out a mod only for servers, along with what is nested in it
+    if (nestedDetails.serverOnly) {
+        return;
+    }
+    readNestedMods(nested, nestedDetails, levels);
+    for (const auto& id : std::as_const(nestedDetails.providedMods)) {
+        for (const auto& version : nestedDetails.providedVersions.value(id)) {
+            provide(details, id, version);
+        }
+    }
+    details.unreadNestedMods |= nestedDetails.unreadNestedMods;
+}
+
+/// Adds what the jars nested in a mod's file give the mod loader to the mod's details, reading as many levels of them as given
+void readNestedMods(MMCZip::ArchiveReader& zip, ModDetails& details, int levels)
+{
+    // Fabric and Quilt load the jars the metadata lists, and Forge and NeoForge the ones in META-INF/jarjar, which a list there only
+    // picks versions of
+    const bool jarJar = details.loaders.testFlag(ModPlatform::NeoForge);
+    if (details.nestedJars.isEmpty() && !jarJar) {
+        return;
+    }
+    if (levels == 0) {
+        details.unreadNestedMods = true;
+        return;
+    }
+
+    auto unread = details.nestedJars;
+    const bool read = zip.parse([&zip, &details, &unread, jarJar, levels](MMCZip::ArchiveReader::File* file) {
+        const auto path = file->filename();
+        const bool listed = unread.removeAll(path) > 0;
+        const bool inJarJar = jarJar && path.startsWith("META-INF/jarjar/") && path.endsWith(".jar") && path.count('/') == 2;
+        if (!listed && !inJarJar) {
+            file->skip();
+            return true;
+        }
+        int status = ARCHIVE_OK;
+        const auto jar = file->readAll(&status);
+        if (status != ARCHIVE_EOF) {
+            details.unreadNestedMods = true;
+            return true;
+        }
+        readNestedMod(jar, zip.getZipName() + "/" + path, details, levels - 1);
+        return true;
+    });
+    // a listed jar that isn't there, or that the file broke off before
+    details.unreadNestedMods |= !read || !unread.isEmpty();
+}
+
+}  // namespace
+
+bool processZIP(Mod& mod, ProcessingLevel level)
+{
+    ModDetails details;
+    MMCZip::ArchiveReader zip(mod.fileinfo().filePath());
+    if (!readMetadata(zip, details)) {
+        return false;
+    }
+    if (level == ProcessingLevel::Full) {
+        readNestedMods(zip, details, g_nestedModLevels);
+    }
+    mod.setDetails(details);
+    return true;
 }
 
 bool processLitemod(Mod& mod, [[maybe_unused]] ProcessingLevel level)

@@ -45,6 +45,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QMimeData>
+#include <QRegularExpression>
 #include <QString>
 #include <QStyle>
 #include <QThreadPool>
@@ -54,6 +55,8 @@
 #include <set>
 
 #include "Version.h"
+#include "minecraft/MinecraftInstance.h"
+#include "minecraft/PackProfile.h"
 #include "minecraft/mod/Resource.h"
 #include "minecraft/mod/ResourceFolderModel.h"
 #include "minecraft/mod/tasks/LocalModParseTask.h"
@@ -92,12 +95,18 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
     int column = index.column();
 
     const auto duplicates = duplicatesOf(at(row).internalId());
-    // like two copies of a mod, this stops the mod loader, but only while it's enabled
+    // like two copies of a mod, these stop the mod loader, but only while the mod is enabled
     const auto damaged = at(row).enabled() && at(row).details().damaged;
+    const auto& requirement = at(row).details().minecraft;
+    const auto minecraft = at(row).enabled() && requirement.isSet() ? minecraftVersion() : QString();
+    const auto forOtherVersion = !minecraft.isEmpty() && !requirement.accepts(minecraft);
+    const auto missing = m_missingDependencies.value(at(row).internalId());
+    const auto incompatible = m_incompatible.value(at(row).internalId());
+    const bool stopsLoader = !duplicates.isEmpty() || damaged || forOtherVersion || !missing.isEmpty() || !incompatible.isEmpty();
 
     switch (role) {
         case Qt::BackgroundRole:
-            if (!duplicates.isEmpty() || damaged) {
+            if (stopsLoader) {
                 return QBrush(QColor(255, 0, 0, 40));
             }
             return rowBackground(row);
@@ -137,7 +146,7 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
             if (column == ImageColumn) {
                 return at(row).icon({ 32, 32 }, Qt::AspectRatioMode::KeepAspectRatioByExpanding);
             }
-            if (column == NameColumn && (!duplicates.isEmpty() || damaged)) {
+            if (column == NameColumn && stopsLoader) {
                 return QIcon::fromTheme("status-bad");
             }
             break;
@@ -173,6 +182,22 @@ QVariant ModFolderModel::data(const QModelIndex& index, int role) const
                     if (damaged) {
                         tooltip += "\n" + tr("Damaged: this file is cut short or isn't a mod at all, as when its download was cut short, "
                                              "and the mod loader will stop at it. Download it again, or disable it.");
+                    }
+                    if (forOtherVersion) {
+                        tooltip += "\n" + tr("Made for another version of Minecraft: it says it works with Minecraft %1, and this "
+                                             "instance has %2. The mod loader will stop at it, so get the version of the mod made for "
+                                             "%2, or disable it.")
+                                              .arg(requirement.text(), minecraft);
+                    }
+                    if (!missing.isEmpty()) {
+                        tooltip += "\n" + tr("Needs other mods: it can't be loaded without %1, and the mod loader won't start the game "
+                                             "without them. Add them, in the versions it needs, or disable this mod.")
+                                              .arg(missing.join(", "));
+                    }
+                    if (!incompatible.isEmpty()) {
+                        tooltip += "\n" + tr("Incompatible with %1: the mod loader won't start the game with both. Disable one of them, "
+                                             "or get versions of them that go together.")
+                                              .arg(incompatible.join(", "));
                     }
                     return tooltip;
                 }
@@ -372,6 +397,8 @@ void ModFolderModel::onParseFinished()
     }
 
     updateDuplicates();
+    updateMissingDependencies();
+    updateIncompatibleMods();
 }
 
 void ModFolderModel::onUpdateSucceeded()
@@ -379,6 +406,8 @@ void ModFolderModel::onUpdateSucceeded()
     ResourceFolderModel::onUpdateSucceeded();
     // a removed or renamed file may have been one of a pair
     updateDuplicates();
+    updateMissingDependencies();
+    updateIncompatibleMods();
 }
 
 QList<QStringList> ModFolderModel::duplicateGroups(ModPlatform::ModLoaderTypes loaders)
@@ -414,6 +443,332 @@ QStringList ModFolderModel::damagedMods()
     return damaged;
 }
 
+namespace {
+/// Whether the mod is a newer copy than the other: one with a later version, or with the same version, the file changed last
+bool isNewer(const Mod* a, const Mod* b)
+{
+    if (const auto order = Version(a->version()) <=> Version(b->version()); order != 0) {
+        return order > 0;
+    }
+    const auto aModified = a->fileinfo().lastModified();
+    const auto bModified = b->fileinfo().lastModified();
+    if (aModified != bModified) {
+        return aModified > bModified;
+    }
+    return a->fileinfo().fileName() < b->fileinfo().fileName();
+}
+
+/// Whether one of these loaders loads the mod while it is enabled, which they don't do with a mod only for servers
+bool isLoadedBy(const Mod& mod, ModPlatform::ModLoaderTypes loaders)
+{
+    return mod.details().loaders.testAnyFlags(loaders) && !mod.details().serverOnly;
+}
+
+/// The IDs the mod's metadata says the loader mustn't load it along with that the other mod is, in a version that can be told to
+/// be one of those, leaving out the game and the loader, which aren't mods to turn off
+QStringList incompatibleIds(const Mod& mod, const Mod& other, const QHash<QString, QStringList>& builtIn)
+{
+    QStringList ids;
+    const auto& incompatible = mod.details().incompatibleMods;
+    for (auto it = incompatible.begin(); it != incompatible.end(); ++it) {
+        const auto& versions = it.value();
+        if (!builtIn.contains(it.key()) &&
+            std::ranges::any_of(other.details().ownVersions.value(it.key()),
+                                [&versions](const QString& version) { return versions.surelyAcceptsModVersion(version); })) {
+            ids << it.key();
+        }
+    }
+    return ids;
+}
+}  // namespace
+
+QList<Mod*> ModFolderModel::otherGameVersionMods(const QString& minecraftVersion)
+{
+    QList<Mod*> mods;
+    for (auto* mod : allMods()) {
+        if (mod->enabled() && !mod->details().minecraft.accepts(minecraftVersion)) {
+            mods << mod;
+        }
+    }
+    std::ranges::sort(mods, [](const Mod* a, const Mod* b) { return a->fileinfo().fileName() < b->fileinfo().fileName(); });
+    return mods;
+}
+
+QString ModFolderModel::minecraftVersion() const
+{
+    if (m_instance == nullptr) {
+        return {};
+    }
+    return m_instance->getPackProfile()->getComponentVersion("net.minecraft");
+}
+
+ModPlatform::ModLoaderTypes ModFolderModel::modLoaders() const
+{
+    if (m_instance == nullptr) {
+        return {};
+    }
+    return m_instance->getPackProfile()->getModLoaders().value_or(ModPlatform::ModLoaderTypes());
+}
+
+QHash<QString, QStringList> ModFolderModel::builtInMods(ModPlatform::ModLoaderTypes loaders) const
+{
+    // MixinExtras comes with Fabric, Quilt and newer versions of Forge and NeoForge, and NeoForge for Minecraft 1.20.1 is still
+    // called forge. Their versions aren't told, but for the loader's own: the game's is checked on its own, and Quilt gives Fabric
+    // mods a version of Fabric Loader of its own.
+    QHash<QString, QStringList> mods{ { "minecraft", {} },    { "java", {} },  { "mixinextras", {} }, { "fabricloader", {} },
+                                      { "quilt_loader", {} }, { "forge", {} }, { "neoforge", {} } };
+    if (m_instance != nullptr) {
+        auto* const profile = m_instance->getPackProfile();
+        if (loaders.testFlag(ModPlatform::Fabric)) {
+            mods["fabricloader"] = QStringList{ profile->getComponentVersion("net.fabricmc.fabric-loader") };
+        }
+        if (loaders.testFlag(ModPlatform::Quilt)) {
+            mods["quilt_loader"] = QStringList{ profile->getComponentVersion("org.quiltmc.quilt-loader") };
+        }
+    }
+    return mods;
+}
+
+QList<ModFolderModel::MissingMods> ModFolderModel::modsMissingDependencies(ModPlatform::ModLoaderTypes loaders, const QSet<Mod*>& turnedOff)
+{
+    loaders &= ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::Forge | ModPlatform::NeoForge;
+    // what the mods still being read provide isn't known yet
+    if (!loaders || hasPendingParseTasks() || dependenciesOverridden(loaders)) {
+        return {};
+    }
+    // Quilt loads the mods in folders in the mods folder too
+    if (loaders.testFlag(ModPlatform::Quilt) &&
+        std::ranges::any_of(QDir(m_dir).entryList(QDir::Dirs | QDir::NoDotAndDotDot),
+                            [](const QString& folder) { return !folder.startsWith('.') && !folder.endsWith(".disabled"); })) {
+        return {};
+    }
+
+    // the versions each ID is provided in; a mod the loader provides itself, in a version that isn't told, takes any mod needing
+    // it whatever else provides it, as a copy of MixinExtras nested in a mod may be older than the loader's own
+    const auto builtIn = builtInMods(loaders);
+    QHash<QString, QStringList> provided;
+    const auto isOn = [&turnedOff](Mod* mod) { return mod->enabled() && !turnedOff.contains(mod); };
+    for (auto* mod : allMods()) {
+        const auto& details = mod->details();
+        if (!isOn(mod)) {
+            continue;
+        }
+        // a mod whose file or metadata, or a mod nested in it, couldn't be read may be what provides anything
+        if (details.damaged || (details.loaders != ModPlatform::ModLoaderTypes() && details.mod_id.isEmpty()) || details.unreadNestedMods) {
+            return {};
+        }
+        if (isLoadedBy(*mod, loaders)) {
+            for (const auto& id : details.providedMods) {
+                provided[id] << details.providedVersions.value(id);
+            }
+        }
+    }
+
+    QList<MissingMods> missing;
+    for (auto* mod : allMods()) {
+        if (!isOn(mod) || !isLoadedBy(*mod, loaders)) {
+            continue;
+        }
+        const auto& details = mod->details();
+        MissingMods found{ .mod = mod };
+        for (const auto& id : details.requiredMods) {
+            const bool anyVersion = builtIn.contains(id) && builtIn.value(id).isEmpty();
+            if (anyVersion || found.ids.contains(id) || found.otherVersions.contains(id)) {
+                continue;
+            }
+            if (!builtIn.contains(id) && !provided.contains(id)) {
+                found.ids << id;
+                continue;
+            }
+            // a version that can't be read, as a placeholder a build left in, may be the one it needs
+            const auto versions = builtIn.value(id) + provided.value(id);
+            const auto requirement = details.requiredVersions.value(id);
+            if (!versions.isEmpty() &&
+                std::ranges::none_of(versions, [&requirement](const QString& version) { return requirement.acceptsModVersion(version); })) {
+                found.otherVersions << id;
+            }
+        }
+        if (!found.ids.isEmpty() || !found.otherVersions.isEmpty()) {
+            missing << found;
+        }
+    }
+    std::ranges::sort(
+        missing, [](const MissingMods& a, const MissingMods& b) { return a.mod->fileinfo().fileName() < b.mod->fileinfo().fileName(); });
+    return missing;
+}
+
+QList<Mod*> ModFolderModel::disabledProviders(const QString& id, ModPlatform::ModLoaderTypes loaders)
+{
+    QList<Mod*> providers;
+    for (auto* mod : allMods()) {
+        if (!mod->enabled() && isLoadedBy(*mod, loaders) && mod->details().providedMods.contains(id)) {
+            providers << mod;
+        }
+    }
+    std::ranges::sort(providers, isNewer);
+    return providers;
+}
+
+QStringList ModFolderModel::providedVersions(const QString& id, ModPlatform::ModLoaderTypes loaders)
+{
+    auto versions = builtInMods(loaders).value(id);
+    for (auto* mod : allMods()) {
+        if (mod->enabled() && isLoadedBy(*mod, loaders)) {
+            for (const auto& version : mod->details().providedVersions.value(id)) {
+                if (!versions.contains(version)) {
+                    versions << version;
+                }
+            }
+        }
+    }
+    return versions;
+}
+
+QString ModFolderModel::describeModId(const QString& id)
+{
+    // as fabric-api-base and fabric-screen-api-v1, where fabric-api itself is the whole of it
+    static const QRegularExpression s_fabricApiModule("^fabric-(api-base|.+-v\\d+)$");
+    return s_fabricApiModule.match(id).hasMatch() ? tr("%1 (part of Fabric API)").arg(id) : id;
+}
+
+QStringList ModFolderModel::describeNeeds(const MissingMods& missing, ModPlatform::ModLoaderTypes loaders)
+{
+    QStringList needs;
+    for (const auto& id : missing.ids) {
+        needs << (disabledProviders(id, loaders).isEmpty() ? describeModId(id) : tr("%1 (turned off)").arg(id));
+    }
+    for (const auto& id : missing.otherVersions) {
+        needs << tr("%1 %2 (%3 is here)")
+                     .arg(id, missing.mod->details().requiredVersions.value(id).text(), providedVersions(id, loaders).join(", "));
+    }
+    return needs;
+}
+
+void ModFolderModel::updateMissingDependencies()
+{
+    // until every mod has been read, what they provide isn't known
+    if (hasPendingParseTasks()) {
+        return;
+    }
+    const auto loaders = modLoaders();
+    QHash<QString, QStringList> missing;
+    for (const auto& found : modsMissingDependencies(loaders)) {
+        missing.insert(found.mod->internalId(), describeNeeds(found, loaders));
+    }
+    if (missing == m_missingDependencies) {
+        return;
+    }
+    m_missingDependencies = missing;
+    if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount({}) - 1));
+    }
+}
+
+bool ModFolderModel::dependenciesOverridden(ModPlatform::ModLoaderTypes loaders) const
+{
+    if (!loaders.testAnyFlags(ModPlatform::Fabric | ModPlatform::Quilt) || m_instance == nullptr) {
+        return false;
+    }
+    const QDir config(FS::PathCombine(m_instance->gameRoot(), "config"));
+    return config.exists("fabric_loader_dependencies.json") || config.exists("quilt-loader-overrides.json");
+}
+
+QSet<Mod*> ModFolderModel::withDependents(QSet<Mod*> mods, ModPlatform::ModLoaderTypes loaders)
+{
+    // a mod that lacks a mod it needs already doesn't go because of these
+    QSet<Mod*> lacking;
+    for (const auto& found : modsMissingDependencies(loaders)) {
+        lacking << found.mod;
+    }
+    for (qsizetype before = -1; before != mods.size();) {
+        before = mods.size();
+        for (const auto& found : modsMissingDependencies(loaders, mods)) {
+            if (!lacking.contains(found.mod)) {
+                mods << found.mod;
+            }
+        }
+    }
+    return mods;
+}
+
+QList<ModFolderModel::IncompatibleMods> ModFolderModel::incompatibleMods(ModPlatform::ModLoaderTypes loaders)
+{
+    // Forge doesn't know incompatible mods, while NeoForge reads them from Forge's metadata file too
+    loaders &= ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::NeoForge;
+    if (!loaders || hasPendingParseTasks() || dependenciesOverridden(loaders)) {
+        return {};
+    }
+    QList<Mod*> loaded;
+    for (auto* mod : allMods()) {
+        if (mod->enabled() && isLoadedBy(*mod, loaders)) {
+            loaded << mod;
+        }
+    }
+    std::ranges::sort(loaded, [](const Mod* a, const Mod* b) { return a->fileinfo().fileName() < b->fileinfo().fileName(); });
+
+    const auto builtIn = builtInMods(loaders);
+    QList<IncompatibleMods> found;
+    for (auto* mod : loaded) {
+        QMap<QString, QList<Mod*>> byId;
+        for (auto* other : loaded) {
+            if (other != mod) {
+                for (const auto& id : incompatibleIds(*mod, *other, builtIn)) {
+                    byId[id] << other;
+                }
+            }
+        }
+        for (auto it = byId.begin(); it != byId.end(); ++it) {
+            found << IncompatibleMods{ .mod = mod, .id = it.key(), .others = it.value() };
+        }
+    }
+    return found;
+}
+
+bool ModFolderModel::incompatibleWithEnabled(const Mod& mod, ModPlatform::ModLoaderTypes loaders)
+{
+    loaders &= ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::NeoForge;
+    if (!loaders || hasPendingParseTasks() || dependenciesOverridden(loaders)) {
+        return false;
+    }
+    const auto builtIn = builtInMods(loaders);
+    return std::ranges::any_of(allMods(), [&mod, &builtIn, loaders](const Mod* other) {
+        return other != &mod && other->enabled() && isLoadedBy(*other, loaders) &&
+               (!incompatibleIds(mod, *other, builtIn).isEmpty() || !incompatibleIds(*other, mod, builtIn).isEmpty());
+    });
+}
+
+QString ModFolderModel::describeIncompatibility(const IncompatibleMods& incompatible)
+{
+    const auto versions = incompatible.mod->details().incompatibleMods.value(incompatible.id);
+    if (!versions.isSet() || versions.text() == "*") {
+        return tr("any version of %1").arg(incompatible.id);
+    }
+    return tr("%1 %2").arg(incompatible.id, versions.text());
+}
+
+void ModFolderModel::updateIncompatibleMods()
+{
+    if (hasPendingParseTasks()) {
+        return;
+    }
+    // each of a pair names the other
+    QHash<QString, QStringList> incompatible;
+    for (const auto& found : incompatibleMods(modLoaders())) {
+        const auto what = describeIncompatibility(found);
+        for (const auto* other : found.others) {
+            incompatible[found.mod->internalId()] << tr("%1 (%2)").arg(other->fileinfo().fileName(), what);
+            incompatible[other->internalId()] << tr("%1 (%2)").arg(found.mod->fileinfo().fileName(), what);
+        }
+    }
+    if (incompatible == m_incompatible) {
+        return;
+    }
+    m_incompatible = incompatible;
+    if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount({}) - 1));
+    }
+}
+
 QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)
 {
     QHash<QString, Mod*> byFileName;
@@ -428,17 +783,7 @@ QStringList ModFolderModel::olderDuplicates(ModPlatform::ModLoaderTypes loaders)
             copies << byFileName.value(fileName);
         }
         // the one to keep first
-        std::ranges::sort(copies, [](const Mod* a, const Mod* b) {
-            if (const auto order = Version(a->version()) <=> Version(b->version()); order != 0) {
-                return order > 0;
-            }
-            const auto aModified = a->fileinfo().lastModified();
-            const auto bModified = b->fileinfo().lastModified();
-            if (aModified != bModified) {
-                return aModified > bModified;
-            }
-            return a->fileinfo().fileName() < b->fileinfo().fileName();
-        });
+        std::ranges::sort(copies, isNewer);
         for (const auto* mod : copies.mid(1)) {
             older << mod->fileinfo().fileName();
         }
@@ -633,6 +978,7 @@ bool ModFolderModel::setResourceEnabled(const QModelIndexList& indexes, EnableAc
     auto disableStatus = ResourceFolderModel::setResourceEnabled(toList(toDisable), EnableAction::DISABLE);
     auto enableStatus = ResourceFolderModel::setResourceEnabled(toList(toEnable), EnableAction::ENABLE);
     updateDuplicates();
+    updateMissingDependencies();
     return disableStatus && enableStatus;
 }
 
@@ -667,6 +1013,7 @@ bool ModFolderModel::setModsEnabled(const QModelIndexList& indexes, EnableAction
 {
     const bool ok = applyEnableAction(indexes, action);
     updateDuplicates();
+    updateMissingDependencies();
     return ok;
 }
 

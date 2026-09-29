@@ -104,14 +104,25 @@ bool isReadable(int headerStatus)
 }
 }  // namespace
 
+int ArchiveReader::open(File& file) const
+{
+    auto* a = file.m_archive.get();
+    if (m_data) {
+        archive_read_support_format_zip(a);
+        file.m_data = *m_data;
+        return archive_read_open_memory(a, file.m_data.constData(), static_cast<size_t>(file.m_data.size()));
+    }
+    archive_read_support_format_all(a);
+    archive_read_support_filter_all(a);
+    auto fileName = m_archivePath.toStdWString();
+    return archive_read_open_filename_w(a, fileName.data(), m_blockSize);
+}
+
 auto ArchiveReader::goToFile(const QString& filename) -> std::unique_ptr<File>
 {
     auto f = std::make_unique<File>();
     auto* a = f->m_archive.get();
-    archive_read_support_format_all(a);
-    archive_read_support_filter_all(a);
-    auto fileName = m_archivePath.toStdWString();
-    if (archive_read_open_filename_w(a, fileName.data(), m_blockSize) != ARCHIVE_OK) {
+    if (open(*f) != ARCHIVE_OK) {
         qCritical() << "Failed to open archive file:" << m_archivePath << "-" << archive_error_string(a);
         return nullptr;
     }
@@ -279,10 +290,7 @@ bool ArchiveReader::parse(const std::function<bool(File*, bool&)>& doStuff)
     m_endedEarly = false;
     auto f = std::make_unique<File>();
     auto* a = f->m_archive.get();
-    archive_read_support_format_all(a);
-    archive_read_support_filter_all(a);
-    auto fileName = m_archivePath.toStdWString();
-    if (archive_read_open_filename_w(a, fileName.data(), m_blockSize) != ARCHIVE_OK) {
+    if (open(*f) != ARCHIVE_OK) {
         m_errorString = QString::fromUtf8(f->error());
         qCritical() << "Failed to open archive file:" << m_archivePath << "-" << m_errorString;
         return false;

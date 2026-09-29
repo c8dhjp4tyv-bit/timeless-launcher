@@ -206,6 +206,51 @@ class CrashHintsTest : public QObject {
                "# J 1234 c2 java.lang.String.hashCode()I java.base@21.0.2 (60 bytes) @ 0x00007f2a8d1c3a4b [0x00007f2a8d1c3a00+0x4b]\n"
             << 21 << QList<QStringList>{};
 
+        QTest::newRow("64-bit natives on a 32-bit Java on Windows")
+            << "Exception in thread \"main\" java.lang.UnsatisfiedLinkError: C:\\Games\\natives\\lwjgl64.dll: Can't load AMD 64-bit .dll "
+               "on a IA 32-bit platform\n"
+               "\tat java.lang.ClassLoader$NativeLibrary.load(Native Method)\n"
+            << 8
+            << QList<QStringList>{ { "native libraries", "64-bit Intel and AMD processors (x86-64)",
+                                     "32-bit Intel and AMD processors (x86)", "Pick a Java built for 64-bit Intel" } };
+        QTest::newRow("Intel natives on an ARM Java on Linux")
+            << "java.lang.UnsatisfiedLinkError: /tmp/lwjgl/liblwjgl.so: /tmp/lwjgl/liblwjgl.so: cannot open shared object file: No such "
+               "file or directory (Possible cause: can't load AMD 64 .so on a AARCH64 platform)\n"
+            << 21
+            << QList<QStringList>{ { "built for 64-bit Intel and AMD processors (x86-64), and this Java for 64-bit ARM processors" } };
+        QTest::newRow("Intel natives on an ARM Java on Linux, Java 8")
+            << "java.lang.UnsatisfiedLinkError: /tmp/liblwjgl.so: (Possible cause: can't load AMD 64-bit .so on a AARCH64-bit platform)\n"
+            << 8 << QList<QStringList>{ { "built for 64-bit Intel and AMD processors (x86-64), and this Java for 64-bit ARM processors" } };
+        QTest::newRow("64-bit natives on a 32-bit Java on Linux")
+            << "java.lang.UnsatisfiedLinkError: /tmp/liblwjgl64.so: wrong ELF class: ELFCLASS64 (Possible cause: architecture word "
+               "width mismatch, can't load 64-bit .so on a 32-bit platform)\n"
+            << 17 << QList<QStringList>{ { "built for 64-bit processors, and this Java for 32-bit processors" } };
+        // as Java 21 put it for a library whose header said AArch64
+        QTest::newRow("ARM natives on an Intel Java on Linux")
+            << "java.lang.UnsatisfiedLinkError: /tmp/natives/liblwjgl.so: /tmp/natives/liblwjgl.so: cannot open shared object file: No "
+               "such file or directory (Possible cause: can't load AARCH64 .so on a AMD 64 platform)\n"
+            << 21
+            << QList<QStringList>{
+                   { "built for 64-bit ARM processors (arm64), and this Java for 64-bit Intel and AMD processors (x86-64)" }
+               };
+        QTest::newRow("word widths differ, Java 8")
+            << "java.lang.UnsatisfiedLinkError: /tmp/liblwjgl64.so: wrong ELF class: ELFCLASS64 (Possible cause: architecture word "
+               "width mismatch)\n"
+            << 8 << QList<QStringList>{ { "32-bit and the other 64-bit", "pick a 64-bit Java" } };
+        QTest::newRow("Intel natives on an Apple chip")
+            << "java.lang.UnsatisfiedLinkError: /private/var/folders/x/natives/liblwjgl.dylib: "
+               "dlopen(/private/var/folders/x/natives/liblwjgl.dylib, 0x0001): tried: '/private/var/folders/x/natives/liblwjgl.dylib' "
+               "(mach-o file, but is an incompatible architecture (have 'x86_64', need 'arm64e' or 'arm64'))\n"
+            << 17
+            << QList<QStringList>{ { "built for 64-bit Intel and AMD processors (x86-64), and this Java for 64-bit ARM processors (arm64)",
+                                     "Rosetta 2" } };
+        QTest::newRow("Apple chip natives on an Intel Java")
+            << "java.lang.UnsatisfiedLinkError: /tmp/liblwjgl.dylib: dlopen(/tmp/liblwjgl.dylib, 1): no suitable image found. Did find: "
+               "/tmp/liblwjgl.dylib: mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64')\n"
+            << 17 << QList<QStringList>{ { "built for 64-bit ARM processors (arm64), and this Java for 64-bit Intel and AMD" } };
+        QTest::newRow("native library missing") << "java.lang.UnsatisfiedLinkError: no lwjgl in java.library.path\n"
+                                                << 8 << QList<QStringList>{};
+
         QTest::newRow("two causes") << "Unrecognized VM option 'ZGenerational'\n"
                                        "java.lang.OutOfMemoryError: Java heap space\n"
                                     << 17 << QList<QStringList>{ { "ZGenerational" }, { "ran out of memory" } };

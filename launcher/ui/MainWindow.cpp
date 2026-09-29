@@ -1535,10 +1535,17 @@ void MainWindow::on_actionDeleteInstance_triggered()
     if (!checkLinkedInstances(id, this, tr("Deleting")))
         return;
 
+    const auto name = m_selectedInstance->name();
+    const auto folder = m_selectedInstance->instanceRoot();
     if (APPLICATION->instances()->trashInstance(id)) {
         ui->actionUndoTrashInstance->setEnabled(APPLICATION->instances()->trashedSomething());
-    } else {
-        APPLICATION->instances()->deleteInstance(id);
+    } else if (!APPLICATION->instances()->deleteInstance(id)) {
+        CustomMessageBox::selectable(this, tr("Couldn't delete the instance"),
+                                     tr("Some of the files of \"%1\" couldn't be deleted, as happens when another program has one of "
+                                        "them open. Close it, and delete what is left of the instance in this folder:\n%2")
+                                         .arg(name, QDir::toNativeSeparators(folder)),
+                                     QMessageBox::Warning, QMessageBox::Ok)
+            ->exec();
     }
     APPLICATION->settings()->set("SelectedInstance", QString());
     selectionBad();

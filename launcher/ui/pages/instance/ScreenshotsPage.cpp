@@ -46,12 +46,14 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMimeData>
 #include <QModelIndex>
 #include <QMutableListIterator>
 #include <QPainter>
 #include <QRegularExpression>
 #include <QSet>
 #include <QStyledItemDelegate>
+#include <QUrl>
 #include <memory>
 #include <utility>
 
@@ -336,7 +338,7 @@ void ScreenshotsPage::showContextMenu(const QPoint& pos)
 {
     auto* menu = ui->toolBar->createContextMenu(this, tr("Context menu"));
 
-    if (ui->listView->selectionModel()->selectedIndexes().size() > 1) {
+    if (selectedScreenshots().size() > 1) {
         menu->removeAction(ui->actionCopy_Image);
     }
 
@@ -360,9 +362,22 @@ void ScreenshotsPage::onItemActivated(QModelIndex index) const
     DesktopServices::openPath(info);
 }
 
+QModelIndexList ScreenshotsPage::selectedScreenshots() const
+{
+    // The list shows the first column of the file model, and selecting everything (Ctrl+A) selects its other columns too, which
+    // counted, copied, deleted and uploaded each screenshot four times
+    QModelIndexList screenshots;
+    for (const auto& index : ui->listView->selectionModel()->selectedIndexes()) {
+        if (index.column() == ui->listView->modelColumn()) {
+            screenshots << index;
+        }
+    }
+    return screenshots;
+}
+
 void ScreenshotsPage::onCurrentSelectionChanged(const QItemSelection& /*selected*/) const
 {
-    const auto selected = ui->listView->selectionModel()->selectedIndexes();
+    const auto selected = selectedScreenshots();
 
     bool allReadable = !selected.isEmpty();
     bool allWritable = !selected.isEmpty();
@@ -394,7 +409,7 @@ void ScreenshotsPage::on_actionView_Folder_triggered() const
 
 void ScreenshotsPage::on_actionUpload_triggered()
 {
-    auto selection = ui->listView->selectionModel()->selectedIndexes();
+    auto selection = selectedScreenshots();
     if (selection.isEmpty()) {
         return;
     }
@@ -495,7 +510,7 @@ void ScreenshotsPage::on_actionUpload_triggered()
 
 void ScreenshotsPage::on_actionCopy_Image_triggered() const
 {
-    auto selection = ui->listView->selectionModel()->selectedIndexes();
+    auto selection = selectedScreenshots();
     if (selection.size() < 1) {
         return;
     }
@@ -510,25 +525,26 @@ void ScreenshotsPage::on_actionCopy_Image_triggered() const
 
 void ScreenshotsPage::on_actionCopy_File_s_triggered() const
 {
-    auto selection = ui->listView->selectionModel()->selectedIndexes();
+    auto selection = selectedScreenshots();
     if (selection.size() < 1) {
         // Don't do anything so we don't empty the users clipboard
         return;
     }
 
-    QString buf = "";
+    // A URI list is UTF-8 with everything else percent-encoded, which a path in the local 8-bit encoding isn't: on Windows, where
+    // that is a code page like Windows-1252, files in "C:/Users/Ümit" reached Explorer as "C:/Users/�mit" and couldn't be pasted
+    QList<QUrl> urls;
     for (auto item : selection) {
-        auto info = m_model->fileInfo(item);
-        buf += "file:///" + info.absoluteFilePath() + "\r\n";
+        urls << QUrl::fromLocalFile(m_model->fileInfo(item).absoluteFilePath());
     }
     auto* mimeData = new QMimeData();
-    mimeData->setData("text/uri-list", buf.toLocal8Bit());
+    mimeData->setUrls(urls);
     QApplication::clipboard()->setMimeData(mimeData);
 }
 
 void ScreenshotsPage::on_actionDelete_triggered()
 {
-    auto selected = ui->listView->selectionModel()->selectedIndexes();
+    auto selected = selectedScreenshots();
 
     const qsizetype count = selected.size();
     QString text;
@@ -562,7 +578,7 @@ void ScreenshotsPage::on_actionDelete_triggered()
 
 void ScreenshotsPage::on_actionRename_triggered() const
 {
-    auto selection = ui->listView->selectionModel()->selectedIndexes();
+    auto selection = selectedScreenshots();
     if (selection.isEmpty()) {
         return;
     }

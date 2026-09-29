@@ -32,6 +32,8 @@ class ArchiveReader {
    public:
     using ArchivePtr = std::unique_ptr<struct archive, int (*)(struct archive*)>;
     explicit ArchiveReader(QString fileName) : m_archivePath(std::move(fileName)) {}
+    /// Reads a zip held in memory instead, as a jar nested in another one, going by the name given in what it logs
+    ArchiveReader(QByteArray data, QString name) : m_archivePath(std::move(name)), m_data(std::move(data)) {}
     virtual ~ArchiveReader() = default;
 
     QStringList getFiles();
@@ -61,6 +63,8 @@ class ArchiveReader {
         friend ArchiveReader;
         ArchivePtr m_archive;
         archive_entry* m_entry;
+        /// The bytes of an archive held in memory, which libarchive reads in place for as long as the file is read
+        QByteArray m_data;
     };
 
     std::unique_ptr<File> goToFile(const QString& filename);
@@ -76,7 +80,11 @@ class ArchiveReader {
     bool endedEarly() const { return m_endedEarly; }
 
    private:
+    /// Opens the archive for the file to read its entries, and returns what libarchive said
+    int open(File& file) const;
+
     QString m_archivePath;
+    std::optional<QByteArray> m_data;
     size_t m_blockSize = 10240;
 
     QStringList m_fileNames;

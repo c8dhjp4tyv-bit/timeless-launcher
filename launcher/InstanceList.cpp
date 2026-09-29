@@ -339,19 +339,20 @@ bool InstanceList::trashInstance(const InstanceId& id)
         return false;
     }
 
-    QString cachedGroupId = m_instanceGroupIndex[id];
+    const QString cachedGroupId = m_instanceGroupIndex.value(id);
 
     qDebug() << "Will trash instance" << id;
     QString trashedLoc;
 
-    if (m_instanceGroupIndex.remove(id) != 0) {
-        decreaseGroupCount(cachedGroupId);
-        saveGroupList();
-    }
-
+    // an instance that stays keeps its group
     if (!FS::trash(inst->instanceRoot(), &trashedLoc)) {
         qWarning() << "Trash of instance" << id << "has not been completely successful...";
         return false;
+    }
+
+    if (m_instanceGroupIndex.remove(id) != 0) {
+        decreaseGroupCount(cachedGroupId);
+        saveGroupList();
     }
 
     qDebug() << "Instance" << id << "has been trashed by the launcher.";
@@ -426,25 +427,25 @@ bool InstanceList::undoTrashInstance()
     return ok;
 }
 
-void InstanceList::deleteInstance(const InstanceId& id)
+bool InstanceList::deleteInstance(const InstanceId& id)
 {
     auto* inst = getInstanceById(id);
     if (!inst) {
         qWarning() << "Cannot delete instance" << id << ". No such instance is present (deleted externally?).";
-        return;
-    }
-
-    QString cachedGroupId = m_instanceGroupIndex[id];
-
-    if (m_instanceGroupIndex.remove(id) != 0) {
-        decreaseGroupCount(cachedGroupId);
-        saveGroupList();
+        return true;
     }
 
     qDebug() << "Will delete instance" << id;
+    // what is left of an instance that couldn't be deleted whole keeps its group, as the instance itself may be left
     if (!FS::deletePath(inst->instanceRoot())) {
         qWarning() << "Deletion of instance" << id << "has not been completely successful...";
-        return;
+        return false;
+    }
+
+    const QString cachedGroupId = m_instanceGroupIndex.value(id);
+    if (m_instanceGroupIndex.remove(id) != 0) {
+        decreaseGroupCount(cachedGroupId);
+        saveGroupList();
     }
 
     qDebug() << "Instance" << id << "has been deleted by the launcher.";
@@ -456,6 +457,7 @@ void InstanceList::deleteInstance(const InstanceId& id)
         }
         qDebug() << "Shortcut" << name << "at path" << filePath << "for instance" << id << "has been deleted by the launcher.";
     }
+    return true;
 }
 
 namespace {

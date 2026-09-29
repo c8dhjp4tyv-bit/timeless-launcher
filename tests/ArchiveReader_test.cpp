@@ -103,6 +103,30 @@ class ArchiveReaderTest : public QObject {
         QCOMPARE(read, QStringList{ "modrinth.index.json" });
     }
 
+    void readFromMemory()
+    {
+        // as a jar nested in a mod's jar is read, without writing it out first
+        const auto whole = packZip();
+        QVERIFY(!whole.isEmpty());
+        std::unique_ptr<MMCZip::ArchiveReader::File> file;
+        {
+            MMCZip::ArchiveReader reader(whole, "pack.zip");
+            QVERIFY(reader.collectFiles());
+            QCOMPARE(reader.getFiles(),
+                     (QStringList{ "modrinth.index.json", "overrides/config/a.dat", "overrides/config/b.dat", "overrides/config/c.dat" }));
+            file = reader.goToFile("modrinth.index.json");
+        }
+        // a file found in it reads on after the reader is gone, as one found in a file on disk does
+        QVERIFY(file);
+        QCOMPARE(file->readAll(), QByteArray(R"({"formatVersion": 1})"));
+
+        // and one that breaks off ends early the same way
+        MMCZip::ArchiveReader cut(whole.first(headerOf(whole, "overrides/config/b.dat") + 10), "pack.zip");
+        QVERIFY(!cut.collectFiles());
+        QVERIFY(cut.endedEarly());
+        QCOMPARE(cut.getFiles(), (QStringList{ "modrinth.index.json", "overrides/config/a.dat" }));
+    }
+
     void notAnArchive()
     {
         const QTemporaryDir temp;

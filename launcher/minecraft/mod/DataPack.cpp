@@ -230,9 +230,20 @@ int DataPack::compare(const Resource& other, SortType type) const
     return 0;
 }
 
+namespace {
+/// The text of a description DataPackUtils::processComponent() made, without the tags and escapes that make it rich text, whose
+/// attributes have no > in them
+QString descriptionText(QString html)
+{
+    static const QRegularExpression s_tag("<[^>]*>");
+    html.remove(s_tag);
+    return html.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&");
+}
+}  // namespace
+
 bool DataPack::applyFilter(const QRegularExpression& filter) const
 {
-    if (filter.match(description()).hasMatch()) {
+    if (filter.match(descriptionText(description())).hasMatch()) {
         return true;
     }
 

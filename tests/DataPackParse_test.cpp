@@ -19,6 +19,10 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QRegularExpression>
 #include <QTest>
 #include <QTimer>
 
@@ -71,6 +75,47 @@ class DataPackParseTest : public QObject {
         QVERIFY(pack.packFormat() == 6);
         QVERIFY(pack.description() == "Some data pack three, leaves on the tree");
         QVERIFY(valid == true);
+    }
+
+    void processComponent_data()
+    {
+        QTest::addColumn<QJsonValue>("description");
+        QTest::addColumn<QString>("html");
+
+        // The description is shown as rich text, where a < in the pack's text would start a tag that swallows the rest of it
+        QTest::newRow("text") << QJsonValue("Faithful <3 x32, for 1.20 & up") << "Faithful &lt;3 x32, for 1.20 &amp; up";
+        QTest::newRow("formatted text") << QJsonValue(
+                                               QJsonObject{ { "text", "a < b" }, { "bold", true }, { "extra", QJsonArray{ "<c>" } } })
+                                        << "<span style=\"font-weight: bold;\">a &lt; b&lt;c&gt;</span>";
+        // and what the pack gives for the attributes of a tag can't end them
+        QTest::newRow("color") << QJsonValue(QJsonObject{ { "text", "x" }, { "color", "red\" title=\"y" } })
+                               << "<span style=\"color: red&quot; title=&quot;y;\">x</span>";
+        QTest::newRow("link") << QJsonValue(QJsonObject{ { "text", "site" },
+                                                         { "clickEvent", QJsonObject{ { "action", "open_url" },
+                                                                                      { "value", "https://example.com/?a=1&b=\"2\"" } } } })
+                              << "<a href=\"https://example.com/?a=1&amp;b=&quot;2&quot;\">site</a>";
+        // the game opens only web links
+        QTest::newRow("link to a file") << QJsonValue(QJsonObject{ { "text", "pack" },
+                                                                   { "clickEvent", QJsonObject{ { "action", "open_url" },
+                                                                                                { "value", "file:///C:/pack.bat" } } } })
+                                        << "pack";
+    }
+
+    void searchDescription()
+    {
+        // searching goes by the text of the description, not by the tags and escapes that make it rich text
+        DataPack pack{ QFileInfo("pack.zip") };
+        pack.setDescription(DataPackUtils::processComponent(QJsonObject{ { "text", "Faithful <3 & more" }, { "color", "gold" } }));
+        QVERIFY(pack.applyFilter(QRegularExpression("<3 & more")));
+        QVERIFY(!pack.applyFilter(QRegularExpression("span|gold|amp")));
+    }
+
+    void processComponent()
+    {
+        QFETCH(const QJsonValue, description);
+        QFETCH(const QString, html);
+
+        QCOMPARE(DataPackUtils::processComponent(description), html);
     }
 };
 

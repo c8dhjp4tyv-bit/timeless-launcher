@@ -16,6 +16,7 @@
  */
 
 #include <QDateTime>
+#include <QDir>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -33,6 +34,56 @@ class DuplicateModsTest : public QObject {
     {
         MMCZip::ArchiveWriter jar(path);
         return jar.open() && jar.addFile(metadataFile, metadata) && jar.close();
+    }
+
+    static bool writeJar(const QString& path, const QList<std::pair<QString, QByteArray>>& files)
+    {
+        MMCZip::ArchiveWriter jar(path);
+        if (!jar.open()) {
+            return false;
+        }
+        for (const auto& [name, contents] : files) {
+            if (!jar.addFile(name, contents)) {
+                return false;
+            }
+        }
+        return jar.close();
+    }
+
+    static QByteArray fabricMetadata(const QString& id, const QString& fields = {})
+    {
+        return QString(R"({"schemaVersion": 1, "id": "%1", "version": "1.0.0"%2})")
+            .arg(id, fields.isEmpty() ? QString() : ", " + fields)
+            .toUtf8();
+    }
+
+    /// Each enabled mod that needs mods that aren't there, or not in versions it takes, with their IDs
+    static QStringList missingOf(ModFolderModel& model, ModPlatform::ModLoaderTypes loaders, const QSet<Mod*>& turnedOff = {})
+    {
+        QStringList lines;
+        for (const auto& found : model.modsMissingDependencies(loaders, turnedOff)) {
+            auto needs = found.ids;
+            for (const auto& id : found.otherVersions) {
+                needs << id + " (another version)";
+            }
+            lines << found.mod->fileinfo().fileName() + ": " + needs.join(", ");
+        }
+        return lines;
+    }
+
+    /// Each enabled mod the loader mustn't load along with others, with what it mustn't be loaded with and the mods that are that
+    static QStringList incompatibleOf(ModFolderModel& model, ModPlatform::ModLoaderTypes loaders)
+    {
+        QStringList lines;
+        for (const auto& found : model.incompatibleMods(loaders)) {
+            QStringList others;
+            for (const auto* other : found.others) {
+                others << other->fileinfo().fileName();
+            }
+            lines << QString("%1: %2 (%3)")
+                         .arg(found.mod->fileinfo().fileName(), ModFolderModel::describeIncompatibility(found), others.join(", "));
+        }
+        return lines;
     }
 
     static bool writeFabricMod(const QString& path, const QString& id, const QString& version = "1.0.0")
@@ -96,6 +147,21 @@ class DuplicateModsTest : public QObject {
         return file.resize(file.size() * 6 / 10);
     }
 
+    /// A jar holding only this Fabric metadata, to nest in another
+    static QByteArray jarOf(const QTemporaryDir& dir, const QByteArray& metadata)
+    {
+        const auto path = dir.filePath("nested.jar.tmp");
+        QFile::remove(path);
+        if (!writeJar(path, "fabric.mod.json", metadata)) {
+            return {};
+        }
+        QFile file(path);
+        const auto bytes = file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+        file.close();
+        QFile::remove(path);
+        return bytes;
+    }
+
     static QModelIndex indexOf(ModFolderModel& model, const QString& fileName)
     {
         for (int row = 0; row < model.rowCount(); row++) {
@@ -107,6 +173,287 @@ class DuplicateModsTest : public QObject {
     }
 
    private slots:
+    void otherGameVersion()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+
+        // as each loader's metadata gives the versions of Minecraft a mod works with
+        QVERIFY(writeJar(mods.filePath("fabric-old.jar"), "fabric.mod.json",
+                         R"({"schemaVersion": 1, "id": "old", "version": "1", "depends": {"minecraft": ">=1.20.1 <1.21"}})"));
+        QVERIFY(writeJar(mods.filePath("fabric-new.jar"), "fabric.mod.json",
+                         R"({"schemaVersion": 1, "id": "new", "version": "1", "depends": {"minecraft": ["1.20.6", "~1.21"]}})"));
+        QVERIFY(writeJar(mods.filePath("fabric-any.jar"), "fabric.mod.json", R"({"schemaVersion": 1, "id": "any", "version": "1"})"));
+        QVERIFY(writeJar(mods.filePath("quilt-old.jar"), "quilt.mod.json",
+                         R"({"schema_version": 1, "quilt_loader": {"id": "quiltold", "version": "1",
+                             "depends": [{"id": "minecraft", "versions": "1.20.1"}]}})"));
+        QVERIFY(writeJar(mods.filePath("forge-old.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"forgeold\"\nversion=\"1\"\n"
+                         "[[dependencies.forgeold]]\nmodId=\"minecraft\"\nmandatory=true\nversionRange=\"[1.20.1,1.20.2)\"\n"));
+        QVERIFY(writeJar(mods.filePath("neoforge-new.jar"), "META-INF/neoforge.mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[4,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"neonew\"\nversion=\"1\"\n"
+                         "[[dependencies.neonew]]\nmodId=\"minecraft\"\ntype=\"required\"\nversionRange=\"[1.21,1.21.2)\"\n"));
+        // one the loader doesn't hold to a version, and one turned off, which isn't loaded
+        QVERIFY(writeJar(mods.filePath("forge-optional.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"optional\"\nversion=\"1\"\n"
+                         "[[dependencies.optional]]\nmodId=\"minecraft\"\nmandatory=false\nversionRange=\"[1.20.1]\"\n"));
+        QVERIFY(QFile::copy(mods.filePath("fabric-old.jar"), mods.filePath("fabric-off.jar.disabled")));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+        QCOMPARE(model.rowCount(), 8);
+
+        const auto fileNames = [&model](const QString& minecraft) {
+            QStringList names;
+            for (const auto* mod : model.otherGameVersionMods(minecraft)) {
+                names << mod->fileinfo().fileName();
+            }
+            return names;
+        };
+        QCOMPARE(fileNames("1.21"), QStringList({ "fabric-old.jar", "forge-old.jar", "quilt-old.jar" }));
+        QCOMPARE(fileNames("1.20.1"), QStringList({ "fabric-new.jar", "neoforge-new.jar" }));
+        // a snapshot isn't compared
+        QCOMPARE(fileNames("24w14a"), QStringList());
+
+        const auto& old = static_cast<const Mod&>(model.at(indexOf(model, "fabric-old.jar").row()));
+        QCOMPARE(old.details().minecraft.text(), ">=1.20.1 <1.21");
+    }
+
+    void missingDependencies()
+    {
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        const auto fabric = [&mods](const QString& fileName, const QString& id, const QString& fields) {
+            return writeJar(mods.filePath(fileName), "fabric.mod.json", fabricMetadata(id, fields));
+        };
+
+        // what the loader provides itself
+        QVERIFY(fabric("builtin.jar", "builtin",
+                       R"("depends": {"minecraft": "1.20.1", "fabricloader": ">=0.15", "java": ">=17", "mixinextras": "*"})"));
+        // a mod that isn't here, and one that is turned off
+        QVERIFY(fabric("iris.jar", "iris", R"("depends": {"sodium": "0.5.8", "fabric-api": "*"})"));
+        QVERIFY(fabric("sodium.jar.disabled", "sodium", ""));
+        // a mod provided under an older name, and one nested in the mod that needs it, as Mod Menu nests the parts of Fabric API it
+        // uses
+        QVERIFY(fabric("renamed.jar", "new-name", R"("provides": ["old-name"])"));
+        QVERIFY(fabric("uses-old-name.jar", "usesold", R"("depends": {"old-name": "*"})"));
+        QVERIFY(writeJar(mods.filePath("modmenu.jar"),
+                         { { "fabric.mod.json", fabricMetadata("modmenu", R"("depends": {"fabric-screen-api-v1": ">=1.0.4"},
+                                                                             "jars": [{"file": "META-INF/jars/screen.jar"}])") },
+                           { "META-INF/jars/screen.jar",
+                             jarOf(mods, R"({"schemaVersion": 1, "id": "fabric-screen-api-v1", "version": "2.0.6+b3afc78b77"})") } }));
+        // a mod only for servers, which the loader leaves out, so it provides nothing and needs nothing
+        QVERIFY(fabric("server.jar", "serverlib", R"("environment": "server", "depends": {"nothing": "*"})"));
+        QVERIFY(fabric("needs-server.jar", "needsserver", R"("depends": {"serverlib": "*"})"));
+        // and a Forge mod, which Fabric doesn't read
+        QVERIFY(writeJar(mods.filePath("forge.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"forgemod\"\nversion=\"1\"\n"
+                         "[[dependencies.forgemod]]\nmodId=\"jei\"\nmandatory=true\n"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QCOMPARE(missingOf(model, ModPlatform::Fabric), (QStringList{ "iris.jar: fabric-api, sodium", "needs-server.jar: serverlib" }));
+        QCOMPARE(missingOf(model, ModPlatform::Forge), QStringList{ "forge.jar: jei" });
+        const auto providers = model.disabledProviders("sodium", ModPlatform::Fabric);
+        QCOMPARE(providers.size(), 1);
+        QCOMPARE(providers.first()->fileinfo().fileName(), "sodium.jar.disabled");
+        QVERIFY(model.disabledProviders("fabric-api", ModPlatform::Fabric).isEmpty());
+
+        // Quilt loads the mods in folders in the mods folder too, which aren't read, so it can't be told what is missing
+        QVERIFY(QDir(mods.path()).mkdir(".index"));
+        QVERIFY(QDir(mods.path()).mkdir("old.disabled"));
+        QCOMPARE(missingOf(model, ModPlatform::Quilt).size(), 2);
+        QVERIFY(QDir(mods.path()).mkdir("more"));
+        QVERIFY(missingOf(model, ModPlatform::Quilt).isEmpty());
+        QCOMPARE(missingOf(model, ModPlatform::Fabric).size(), 2);
+    }
+
+    void missingDependencyVersions()
+    {
+        // Fabric holds a mod to the versions of the mods it needs, as Iris to the one version of Sodium it was made with, and
+        // leaves out build metadata after a +
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        const auto fabric = [&mods](const QString& fileName, const QString& fields) {
+            return writeJar(mods.filePath(fileName), "fabric.mod.json", QString("{\"schemaVersion\": 1, %1}").arg(fields).toUtf8());
+        };
+        QVERIFY(fabric("sodium.jar", R"("id": "sodium", "version": "0.5.11+mc1.20.1")"));
+        QVERIFY(fabric("fabric-api.jar", R"("id": "fabric-api", "version": "0.92.2+1.20.1", "provides": ["fabric"])"));
+        QVERIFY(fabric("iris-old.jar", R"("id": "irisold", "version": "1.7.0", "depends": {"sodium": "0.5.8"})"));
+        QVERIFY(fabric("iris-new.jar", R"("id": "irisnew", "version": "1.7.2", "depends": {"sodium": "0.5.11"})"));
+        QVERIFY(fabric("needs-newer-api.jar", R"("id": "newerapi", "version": "1", "depends": {"fabric": ">=0.95", "sodium": "~0.5"})"));
+        QVERIFY(fabric("needs-api.jar", R"("id": "api", "version": "1", "depends": {"fabric-api": [">=0.90.0 <0.93", "1.0.x"]})"));
+        // a version that can't be read may be the one needed, and a mod the loader comes with, as MixinExtras, takes any version even
+        // when a mod nests an older copy of it
+        QVERIFY(fabric("placeholder.jar", R"("id": "placeholder", "version": "${version}")"));
+        QVERIFY(fabric("needs-placeholder.jar", R"("id": "needsplaceholder", "version": "1", "depends": {"placeholder": ">=2"})"));
+        QVERIFY(writeJar(
+            mods.filePath("nests-mixinextras.jar"),
+            { { "fabric.mod.json", fabricMetadata("nester", R"("jars": [{"file": "META-INF/jars/mixinextras.jar"}])") },
+              { "META-INF/jars/mixinextras.jar", jarOf(mods, R"({"schemaVersion": 1, "id": "mixinextras", "version": "0.2.0"})") } }));
+        QVERIFY(fabric("needs-mixinextras.jar", R"("id": "needsmixin", "version": "1", "depends": {"mixinextras": ">=0.3.2"})"));
+        // and a Forge mod, going by Maven's ranges
+        QVERIFY(writeJar(mods.filePath("jei.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"jei\"\nversion=\"11.6.0\"\n"));
+        QVERIFY(writeJar(mods.filePath("needs-jei.jar"), "META-INF/mods.toml",
+                         "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"jeiaddon\"\nversion=\"1\"\n"
+                         "[[dependencies.jeiaddon]]\nmodId=\"jei\"\nmandatory=true\nversionRange=\"[15.0,)\"\n"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QCOMPARE(missingOf(model, ModPlatform::Fabric),
+                 (QStringList{ "iris-old.jar: sodium (another version)", "needs-newer-api.jar: fabric (another version)" }));
+        QCOMPARE(missingOf(model, ModPlatform::Forge), QStringList{ "needs-jei.jar: jei (another version)" });
+        QCOMPARE(model.providedVersions("sodium", ModPlatform::Fabric), QStringList{ "0.5.11+mc1.20.1" });
+        const auto found = model.modsMissingDependencies(ModPlatform::Fabric).first();
+        QCOMPARE(model.describeNeeds(found, ModPlatform::Fabric), QStringList{ "sodium 0.5.8 (0.5.11+mc1.20.1 is here)" });
+    }
+
+    void missingDependenciesInTurn()
+    {
+        // turning off a mod that needs a mod that isn't there leaves out what needs that mod in turn
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        QVERIFY(writeJar(mods.filePath("create.jar"), "fabric.mod.json", fabricMetadata("create", R"("depends": {"flywheel": "*"})")));
+        QVERIFY(writeJar(mods.filePath("addon.jar"), "fabric.mod.json", fabricMetadata("addon", R"("depends": {"create": "*"})")));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QCOMPARE(missingOf(model, ModPlatform::Fabric), QStringList{ "create.jar: flywheel" });
+        const QSet<Mod*> create{ &model.at(indexOf(model, "create.jar").row()) };
+        QCOMPARE(missingOf(model, ModPlatform::Fabric, create), QStringList{ "addon.jar: create" });
+    }
+
+    void withDependents()
+    {
+        // turning off a mod leaves out what needs it, and what needs those in turn, but not a mod that lacks another already
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        QVERIFY(writeJar(mods.filePath("flywheel.jar"), "fabric.mod.json", fabricMetadata("flywheel")));
+        QVERIFY(writeJar(mods.filePath("create.jar"), "fabric.mod.json", fabricMetadata("create", R"("depends": {"flywheel": "*"})")));
+        QVERIFY(writeJar(mods.filePath("addon.jar"), "fabric.mod.json", fabricMetadata("addon", R"("depends": {"create": "*"})")));
+        QVERIFY(writeJar(mods.filePath("lacking.jar"), "fabric.mod.json",
+                         fabricMetadata("lacking", R"("depends": {"flywheel": "*", "absent": "*"})")));
+        QVERIFY(writeJar(mods.filePath("other.jar"), "fabric.mod.json", fabricMetadata("other")));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QStringList fileNames;
+        for (const auto* mod : model.withDependents({ &model.at(indexOf(model, "flywheel.jar").row()) }, ModPlatform::Fabric)) {
+            fileNames << mod->fileinfo().fileName();
+        }
+        fileNames.sort();
+        QCOMPARE(fileNames, (QStringList{ "addon.jar", "create.jar", "flywheel.jar" }));
+        QCOMPARE(model.withDependents({ &model.at(indexOf(model, "other.jar").row()) }, ModPlatform::Fabric).size(), 1);
+    }
+
+    void incompatible()
+    {
+        // what the loader mustn't load together, as Sodium says of old versions of its add-ons and of OptiFabric
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        const auto fabric = [&mods](const QString& fileName, const QString& fields) {
+            return writeJar(mods.filePath(fileName), "fabric.mod.json", QString("{\"schemaVersion\": 1, %1}").arg(fields).toUtf8());
+        };
+        QVERIFY(fabric("sodium.jar", R"("id": "sodium", "version": "0.5.11+mc1.20.1",
+                                        "breaks": {"optifabric": "*", "sodium-extra": "<0.5.4", "iris": "<=1.6.14", "indium": "<=1.0.28",
+                                                   "reeses-sodium-options": "<1.7.1", "minecraft": "*", "fabricloader": "<1"})"));
+        QVERIFY(fabric("sodium-extra.jar", R"("id": "sodium-extra", "version": "0.5.3+mc1.20.1")"));
+        // new enough, turned off, and in a version that can't be told
+        QVERIFY(fabric("iris.jar", R"("id": "iris", "version": "1.7.0+mc1.20.1")"));
+        QVERIFY(fabric("optifabric.jar.disabled", R"("id": "optifabric", "version": "1.14.3")"));
+        QVERIFY(fabric("reeses.jar", R"("id": "reeses-sodium-options", "version": "mc1.20.1-1.7.0")"));
+        // a mod nested in another, which the loader may leave out rather than stop
+        QVERIFY(writeJar(mods.filePath("nests-indium.jar"),
+                         { { "fabric.mod.json", fabricMetadata("nester", R"("jars": [{"file": "META-INF/jars/indium.jar"}])") },
+                           { "META-INF/jars/indium.jar", jarOf(mods, R"({"schemaVersion": 1, "id": "indium", "version": "1.0.27"})") } }));
+        // a mod provided under another name, and one only for servers, which the loader leaves out
+        QVERIFY(fabric("renamed.jar", R"("id": "renamed", "version": "2.0", "provides": ["oldname"])"));
+        QVERIFY(fabric("breaks-old-name.jar", R"("id": "breaker", "version": "1", "breaks": {"oldname": ">=2"})"));
+        QVERIFY(fabric("server.jar", R"("id": "serverside", "version": "1", "environment": "server", "breaks": {"sodium": "*"})"));
+        QVERIFY(fabric("breaks-iris.jar.disabled", R"("id": "irisbreaker", "version": "1", "breaks": {"iris": "*"})"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QCOMPARE(incompatibleOf(model, ModPlatform::Fabric),
+                 (QStringList{ "breaks-old-name.jar: oldname >=2 (renamed.jar)", "sodium.jar: sodium-extra <0.5.4 (sodium-extra.jar)" }));
+        // Quilt reads Fabric's metadata too, and Forge knows no incompatible mods
+        QCOMPARE(incompatibleOf(model, ModPlatform::Quilt).size(), 2);
+        QVERIFY(incompatibleOf(model, ModPlatform::Forge).isEmpty());
+
+        // a turned-off mod that an enabled one says it mustn't be loaded with, or that says so of one, isn't one to turn on
+        const auto incompatibleWithEnabled = [&model](const QString& fileName) {
+            return model.incompatibleWithEnabled(model.at(indexOf(model, fileName).row()), ModPlatform::Fabric);
+        };
+        QVERIFY(incompatibleWithEnabled("optifabric.jar.disabled"));
+        QVERIFY(incompatibleWithEnabled("breaks-iris.jar.disabled"));
+        QVERIFY(!incompatibleWithEnabled("iris.jar"));
+        QVERIFY(!incompatibleWithEnabled("reeses.jar"));
+
+        // OptiFabric once it is turned on, and nothing once Sodium is off
+        QVERIFY(model.setModsEnabled({ indexOf(model, "optifabric.jar.disabled") }, EnableAction::ENABLE));
+        QCOMPARE(incompatibleOf(model, ModPlatform::Fabric),
+                 (QStringList{ "breaks-old-name.jar: oldname >=2 (renamed.jar)", "sodium.jar: any version of optifabric (optifabric.jar)",
+                               "sodium.jar: sodium-extra <0.5.4 (sodium-extra.jar)" }));
+        QVERIFY(model.setModsEnabled({ indexOf(model, "sodium.jar") }, EnableAction::DISABLE));
+        QCOMPARE(incompatibleOf(model, ModPlatform::Fabric), QStringList{ "breaks-old-name.jar: oldname >=2 (renamed.jar)" });
+    }
+
+    void neoForgeIncompatible()
+    {
+        // NeoForge reads incompatible mods from Forge's metadata file too, while Forge doesn't know them
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        QVERIFY(
+            writeJar(mods.filePath("embeddium.jar"), "META-INF/mods.toml",
+                     "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"embeddium\"\nversion=\"0.3.0\"\n"
+                     "[[dependencies.embeddium]]\nmodId=\"rubidium\"\ntype=\"incompatible\"\nversionRange=\"[,0.7)\"\n"));
+        QVERIFY(
+            writeJar(mods.filePath("rubidium.jar"), "META-INF/mods.toml",
+                     "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"rubidium\"\nversion=\"0.6.5\"\n"));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+
+        QCOMPARE(incompatibleOf(model, ModPlatform::NeoForge), QStringList{ "embeddium.jar: rubidium [,0.7) (rubidium.jar)" });
+        QVERIFY(incompatibleOf(model, ModPlatform::Forge).isEmpty());
+    }
+
+    void missingDependenciesUnknown_data()
+    {
+        QTest::addColumn<QString>("fileName");
+        QTest::addColumn<QByteArray>("metadata");
+
+        QTest::newRow("metadata that can't be read") << "broken.jar" << QByteArray(R"({"schemaVersion": 1, "id": )");
+        QTest::newRow("a nested mod that isn't there")
+            << "nesting.jar" << fabricMetadata("nesting", R"("jars": [{"file": "META-INF/jars/gone.jar"}])");
+    }
+
+    void missingDependenciesUnknown()
+    {
+        // a mod that couldn't be read may be the one that provides what another needs
+        QFETCH(const QString, fileName);
+        QFETCH(const QByteArray, metadata);
+
+        const QTemporaryDir mods;
+        QVERIFY(mods.isValid());
+        QVERIFY(writeJar(mods.filePath("iris.jar"), "fabric.mod.json", fabricMetadata("iris", R"("depends": {"sodium": "*"})")));
+        QVERIFY(writeJar(mods.filePath(fileName), "fabric.mod.json", metadata));
+
+        ModFolderModel model(mods.path(), nullptr, false, false);
+        QVERIFY(load(model));
+        QVERIFY(missingOf(model, ModPlatform::Fabric).isEmpty());
+
+        // unless it is turned off
+        QVERIFY(model.setModsEnabled({ indexOf(model, fileName) }, EnableAction::DISABLE));
+        QCOMPARE(missingOf(model, ModPlatform::Fabric), QStringList{ "iris.jar: sodium" });
+    }
+
     void damaged()
     {
         const QTemporaryDir mods;
