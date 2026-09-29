@@ -24,8 +24,9 @@
 class ModFolderModel;
 
 /// Mod loaders stop at a mod file Java can't open, at a mod made for another version of Minecraft and at one that needs a mod
-/// that isn't there, and refuse to start with two copies of a mod, so rather than let the game fail after loading for a while,
-/// this names such files and offers to turn them off, or to turn on the mods others need
+/// that isn't there, and refuse to start with two copies of a mod, or with mods that say they mustn't be loaded together, so
+/// rather than let the game fail after loading for a while, this names such files and offers to turn them off, or to turn on the
+/// mods others need
 class CheckModFiles : public LaunchStep {
     Q_OBJECT
 
@@ -59,6 +60,7 @@ class CheckModFiles : public LaunchStep {
     bool checkDamaged(ModFolderModel* mods);
     bool checkGameVersion(ModFolderModel* mods);
     bool checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders);
+    bool checkIncompatible(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders);
     bool checkDependencies(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders);
     Answer ask(ModFolderModel* mods, const Question& question);
 

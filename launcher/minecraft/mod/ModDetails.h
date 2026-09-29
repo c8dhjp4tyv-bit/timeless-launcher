@@ -166,6 +166,14 @@ struct ModDetails {
     /* The versions the file provides each of those in */
     QHash<QString, QStringList> providedVersions;
 
+    /* Of those, the ones the file's own metadata names, and their versions: unlike the mods nested in the file, which it may leave
+       out, the mod loader loads these whenever the file is enabled */
+    QHash<QString, QStringList> ownVersions;
+
+    /* The IDs of the mods the mod loader won't load along with this one, as its metadata lists them, each with the versions of it
+       that it won't, unset for any version */
+    QHash<QString, GameVersionRequirement> incompatibleMods;
+
     /* The jars nested in the file that its metadata lists, which the mod loader loads as mods of their own */
     QStringList nestedJars;
 
@@ -197,6 +205,8 @@ struct ModDetails {
         , requiredVersions(other.requiredVersions)
         , providedMods(other.providedMods)
         , providedVersions(other.providedVersions)
+        , ownVersions(other.ownVersions)
+        , incompatibleMods(other.incompatibleMods)
         , nestedJars(other.nestedJars)
         , unreadNestedMods(other.unreadNestedMods)
         , serverOnly(other.serverOnly)

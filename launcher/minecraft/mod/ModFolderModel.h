@@ -151,6 +151,26 @@ class ModFolderModel : public ResourceFolderModel {
     QStringList describeNeeds(const MissingMods& missing, ModPlatform::ModLoaderTypes loaders);
     /** The mod ID, saying what it is part of when it names a module of Fabric API, which mods nest a few of */
     static QString describeModId(const QString& id);
+    /** These mods, along with the enabled mods the loaders won't load without them, and those that need those in turn */
+    QSet<Mod*> withDependents(QSet<Mod*> mods, ModPlatform::ModLoaderTypes loaders);
+
+    /** An enabled mod whose metadata says its mod loader mustn't load it along with other enabled mods */
+    struct IncompatibleMods {
+        Mod* mod = nullptr;
+        /** The ID of the mod it mustn't be loaded with */
+        QString id;
+        /** The enabled mods that are that one, in a version it mustn't be loaded with */
+        QList<Mod*> others;
+    };
+    /**
+     * The enabled mods these loaders read that they mustn't load along with other enabled mods, by file name. Only mods in the
+     * folder count, not ones nested in them, which the loader may leave out rather than stop, and only versions that can be told.
+     */
+    QList<IncompatibleMods> incompatibleMods(ModPlatform::ModLoaderTypes loaders);
+    /** The mod the mod mustn't be loaded with, in the versions it mustn't, for messages */
+    static QString describeIncompatibility(const IncompatibleMods& incompatible);
+    /** Whether these loaders mustn't load the mod along with the enabled mods, as its metadata or one of theirs says */
+    bool incompatibleWithEnabled(const Mod& mod, ModPlatform::ModLoaderTypes loaders);
 
    private slots:
     void onParseSucceeded(int ticket, const QString& resourceId) override;
@@ -160,6 +180,9 @@ class ModFolderModel : public ResourceFolderModel {
    private:
     void updateDuplicates();
     void updateMissingDependencies();
+    void updateIncompatibleMods();
+    /** Whether Fabric or Quilt was told to change what mods need, and what they mustn't be loaded with */
+    bool dependenciesOverridden(ModPlatform::ModLoaderTypes loaders) const;
     /** The version of Minecraft the instance runs, or nothing without an instance */
     QString minecraftVersion() const;
     /** The mod loaders the instance runs, or none without an instance */
@@ -173,4 +196,6 @@ class ModFolderModel : public ResourceFolderModel {
     QHash<QString, QStringList> m_duplicates;
     // internal ID -> what it needs that no enabled mod provides, or not in a version it takes
     QHash<QString, QStringList> m_missingDependencies;
+    // internal ID -> the enabled mods it mustn't be loaded along with, whichever of them says so
+    QHash<QString, QStringList> m_incompatible;
 };

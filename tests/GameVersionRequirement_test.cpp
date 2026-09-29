@@ -144,6 +144,50 @@ class GameVersionRequirementTest : public QObject {
         QCOMPARE(GameVersionRequirement::fromFabric(anyOf).acceptsModVersion(version), accepted);
     }
 
+    void surelyAcceptedModVersion_data()
+    {
+        QTest::addColumn<QString>("syntax");
+        QTest::addColumn<QStringList>("requirement");
+        QTest::addColumn<QString>("version");
+        QTest::addColumn<bool>("accepted");
+
+        // as Sodium says of the versions of Sodium Extra and Iris it mustn't be loaded with
+        QTest::newRow("older") << "fabric" << QStringList{ "<0.5.4" } << "0.5.3" << true;
+        QTest::newRow("older, with build metadata") << "fabric" << QStringList{ "<0.5.4" } << "0.5.3+mc1.20.1" << true;
+        QTest::newRow("the version given") << "fabric" << QStringList{ "<0.5.4" } << "0.5.4" << false;
+        QTest::newRow("up to and with") << "fabric" << QStringList{ "<=1.6.14" } << "1.6.14+1.20.1" << true;
+        QTest::newRow("newer") << "fabric" << QStringList{ "<=1.6.14" } << "1.7.0+mc1.20.1" << false;
+        QTest::newRow("one of two") << "fabric" << QStringList{ "<1.0", ">=2.0 <3.0" } << "2.5" << true;
+        QTest::newRow("neither of two") << "fabric" << QStringList{ "<1.0", ">=2.0 <3.0" } << "1.5" << false;
+        // * and nothing at all are any version, whatever it looks like
+        QTest::newRow("any") << "fabric" << QStringList{ "*" } << "${version}" << true;
+        QTest::newRow("empty") << "fabric" << QStringList{ "" } << "1.0-beta" << true;
+        QTest::newRow("nothing given") << "fabric" << QStringList{} << "1.0" << true;
+        // what can't be read can't be told to be one of them
+        QTest::newRow("pre-release") << "fabric" << QStringList{ "<0.5.4" } << "0.5.3-beta.1" << false;
+        QTest::newRow("placeholder") << "fabric" << QStringList{ "<2" } << "${version}" << false;
+        QTest::newRow("unreadable condition") << "fabric" << QStringList{ "<latest" } << "1.0" << false;
+        QTest::newRow("readable alternative") << "fabric" << QStringList{ "latest", "<2" } << "1.0" << true;
+        // NeoForge's ranges
+        QTest::newRow("maven range") << "maven" << QStringList{ "[1.0,2.0)" } << "1.5" << true;
+        QTest::newRow("maven range, outside") << "maven" << QStringList{ "[1.0,2.0)" } << "2.0" << false;
+        QTest::newRow("maven version alone") << "maven" << QStringList{ "1.0" } << "5.0" << true;
+        QTest::newRow("maven placeholder") << "maven" << QStringList{ "${range}" } << "1.0" << false;
+        QTest::newRow("maven qualifier") << "maven" << QStringList{ "[1.0,2.0)" } << "1.5-beta" << false;
+    }
+
+    void surelyAcceptedModVersion()
+    {
+        QFETCH(const QString, syntax);
+        QFETCH(const QStringList, requirement);
+        QFETCH(const QString, version);
+        QFETCH(const bool, accepted);
+
+        const auto versions =
+            syntax == "maven" ? GameVersionRequirement::fromMaven(requirement.value(0)) : GameVersionRequirement::fromFabric(requirement);
+        QCOMPARE(versions.surelyAcceptsModVersion(version), accepted);
+    }
+
     void text()
     {
         QCOMPARE(GameVersionRequirement::fromFabric({ ">=1.20.1  <1.21", "1.19.2" }).text(), ">=1.20.1 <1.21, 1.19.2");

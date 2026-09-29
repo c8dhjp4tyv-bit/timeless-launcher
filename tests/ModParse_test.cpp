@@ -312,6 +312,60 @@ class ModParseTest : public QObject {
         QCOMPARE(mod.details().requiredVersions.value("jei").text(), required.contains("jei") ? "[15,)" : "");
     }
 
+    void fabricIncompatible()
+    {
+        // the mods the loader mustn't load along with this one, as Sodium lists them; an empty list of versions is none of them,
+        // and conflicts are only warned of
+        const auto details = ModUtils::ReadFabricModInfo(fabricMod(R"(
+            "breaks": {"optifabric": "*", "sodium-extra": "<0.5.4", "iris": ["<=1.6.14", "1.7.0-beta.1"], "none": [], "number": 5},
+            "conflicts": {"warned": "*"})"));
+        auto ids = details.incompatibleMods.keys();
+        ids.sort();
+        QCOMPARE(ids, (QStringList{ "iris", "optifabric", "sodium-extra" }));
+        QCOMPARE(details.incompatibleMods.value("optifabric").text(), "*");
+        QCOMPARE(details.incompatibleMods.value("sodium-extra").text(), "<0.5.4");
+        QCOMPARE(details.incompatibleMods.value("iris").text(), "<=1.6.14, 1.7.0-beta.1");
+    }
+
+    void quiltIncompatible()
+    {
+        // An ID alone is any version of it. One only warned of, one that goes with another mod there, an array, which is only
+        // incompatible along with all of its mods, and versions given as an object of any and all aren't sure to stop the loader.
+        const auto details = ModUtils::ReadQuiltModInfo(quiltMod(R"(
+            "breaks": ["optifabric", {"id": "org.example:sodium_extra", "versions": "<0.5.4"}, {"id": "any_version"},
+                       {"id": "warned", "optional": true}, {"id": "bridged", "unless": "bridge"}, [{"id": "a"}, {"id": "b"}],
+                       {"id": "any_or_all", "versions": {"any": ["1"]}}, {"id": "none", "versions": []}])"));
+        auto ids = details.incompatibleMods.keys();
+        ids.sort();
+        QCOMPARE(ids, (QStringList{ "any_version", "optifabric", "sodium_extra" }));
+        QCOMPARE(details.incompatibleMods.value("sodium_extra").text(), "<0.5.4");
+        QVERIFY(!details.incompatibleMods.value("optifabric").isSet());
+        QVERIFY(!details.incompatibleMods.value("any_version").isSet());
+    }
+
+    void neoForgeIncompatible()
+    {
+        // NeoForge won't load a mod along with one it is incompatible with, on the client too, and only warns of a discouraged one
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("mod.jar");
+        QVERIFY(writeJar(path, { { "META-INF/neoforge.mods.toml",
+                                   "modLoader=\"javafml\"\nloaderVersion=\"[4,)\"\nlicense=\"MIT\"\n"
+                                   "[[mods]]\nmodId=\"example\"\nversion=\"1\"\n"
+                                   "[[dependencies.example]]\nmodId=\"optifine\"\ntype=\"incompatible\"\n"
+                                   "[[dependencies.example]]\nmodId=\"rubidium\"\ntype=\"incompatible\"\nversionRange=\"[,0.7)\"\n"
+                                   "[[dependencies.example]]\nmodId=\"discouraged\"\ntype=\"discouraged\"\n"
+                                   "[[dependencies.example]]\nmodId=\"serverside\"\ntype=\"incompatible\"\nside=\"SERVER\"\n" } }));
+
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        auto ids = mod.details().incompatibleMods.keys();
+        ids.sort();
+        QCOMPARE(ids, (QStringList{ "optifine", "rubidium" }));
+        QVERIFY(!mod.details().incompatibleMods.value("optifine").isSet());
+        QCOMPARE(mod.details().incompatibleMods.value("rubidium").text(), "[,0.7)");
+    }
+
     void nestedMods()
     {
         // Fabric loads the jars a mod's metadata lists as mods of their own, and those can nest more, as Fabric API's modules
@@ -337,6 +391,8 @@ class ModParseTest : public QObject {
         QCOMPARE(mod.details().providedMods, (QStringList{ "example", "middle", "inner", "inner-old", "org_example_library" }));
         QCOMPARE(mod.details().providedVersions.value("inner-old"), QStringList{ "1.0.0" });
         QVERIFY(!mod.details().unreadNestedMods);
+        // the loader may leave a nested mod out, but not the file's own
+        QCOMPARE(mod.details().ownVersions.keys(), QStringList{ "example" });
 
         // what the basic information of a mod needs doesn't include what is nested in it
         Mod basic{ QFileInfo(path) };

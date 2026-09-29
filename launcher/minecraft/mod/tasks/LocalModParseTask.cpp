@@ -342,6 +342,13 @@ ModDetails ReadMCModTOML(QByteArray contents)
                                                         GameVersionRequirement::fromMaven(QString::fromStdString(range->get())));
                     }
                 }
+                // NeoForge won't load the mod along with one it says it is incompatible with, and only warns of a discouraged one
+                if (id != nullptr && type != nullptr && type->get() == "incompatible" && !onlyOnServers) {
+                    const auto* range = (*table)["versionRange"].as_string();
+                    details.incompatibleMods.insert(
+                        QString::fromStdString(id->get()),
+                        GameVersionRequirement::fromMaven(range ? QString::fromStdString(range->get()) : QString()));
+                }
             }
         }
     }
@@ -454,6 +461,13 @@ ModDetails ReadFabricModInfo(QByteArray contents)
         for (auto it = depends.begin(); it != depends.end(); ++it) {
             if (const auto versions = GameVersionRequirement::fromFabric(stringsOf(it.value())); versions.isSet()) {
                 details.requiredVersions.insert(it.key(), versions);
+            }
+        }
+        // the mods the loader won't load along with this one, in the versions given, where an empty list gives none
+        const auto breaks = object.value("breaks").toObject();
+        for (auto it = breaks.begin(); it != breaks.end(); ++it) {
+            if (const auto versions = stringsOf(it.value()); !versions.isEmpty()) {
+                details.incompatibleMods.insert(it.key(), GameVersionRequirement::fromFabric(versions));
             }
         }
         if (!details.mod_id.isEmpty()) {
@@ -587,6 +601,22 @@ ModDetails ReadQuiltModInfo(QByteArray contents)
                 }
                 if (!modId.isEmpty() && modId != "minecraft" && !modId.startsWith("quilt_")) {
                     details.dependencies.append(modId);
+                }
+            }
+
+            // The mods the loader won't load along with this one: an ID alone for any version of it, or an object with the versions.
+            // One it is only warned of, one that is fine along with another mod, and an array, which is only incompatible along with
+            // all of the mods in it, aren't. Neither is one whose versions are an object of any and all, which aren't read.
+            for (const auto& broken : modInfo.value("breaks").toArray()) {
+                const auto brokenObject = broken.toObject();
+                if (broken.isObject() && (brokenObject.value("optional").toBool() || brokenObject.contains("unless") ||
+                                          brokenObject.value("versions").isObject())) {
+                    continue;
+                }
+                const auto modId = (broken.isObject() ? brokenObject.value("id").toString() : broken.toString()).section(':', -1);
+                const auto versions = stringsOf(brokenObject.value("versions"));
+                if (!modId.isEmpty() && (!brokenObject.contains("versions") || !versions.isEmpty())) {
+                    details.incompatibleMods.insert(modId, GameVersionRequirement::fromFabric(versions));
                 }
             }
         }
@@ -796,6 +826,8 @@ bool readMetadata(MMCZip::ArchiveReader& zip, ModDetails& details)
             }
         }
     }
+    // what the metadata names, before the mods nested in the file are added
+    details.ownVersions = details.providedVersions;
     return isValid;
 }
 

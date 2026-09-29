@@ -279,3 +279,30 @@ bool GameVersionRequirement::acceptsModVersion(const QString& version) const
 {
     return accepts(m_syntax == Syntax::Fabric ? version.section('+', 0, 0) : version);
 }
+
+bool GameVersionRequirement::surelyAcceptsModVersion(const QString& version) const
+{
+    if (m_syntax == Syntax::None) {
+        return true;
+    }
+    if (m_syntax == Syntax::Maven) {
+        const auto& range = m_alternatives.first();
+        if (range.contains('$')) {
+            return false;
+        }
+        // a version on its own only recommends one, and takes any
+        if (!range.startsWith('[') && !range.startsWith('(')) {
+            return true;
+        }
+        const auto release = releaseNumbers(version);
+        return release && mavenRange(*release, range).value_or(false);
+    }
+
+    const auto release = releaseNumbers(version.section('+', 0, 0));
+    return std::ranges::any_of(m_alternatives, [&release](const QString& alternative) {
+        // * takes any version, whatever it looks like, as does an alternative of nothing else
+        return std::ranges::all_of(alternative.split(' ', Qt::SkipEmptyParts), [&release](const QString& condition) {
+            return condition == "*" || (release && fabricCondition(*release, condition).value_or(false));
+        });
+    });
+}

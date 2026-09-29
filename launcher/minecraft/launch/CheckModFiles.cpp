@@ -64,7 +64,9 @@ void CheckModFiles::check()
     const auto loaders = m_parent->instance()->getPackProfile()->getModLoaders().value_or(ModPlatform::ModLoaderTypes()) &
                          (ModPlatform::Fabric | ModPlatform::Quilt | ModPlatform::Forge | ModPlatform::NeoForge);
     auto* mods = m_parent->instance()->loaderModList();
-    if (!loaders || (checkDamaged(mods) && checkGameVersion(mods) && checkDuplicates(mods, loaders) && checkDependencies(mods, loaders))) {
+    // what needs a mod turned off for being incompatible is only known after
+    if (!loaders || (checkDamaged(mods) && checkGameVersion(mods) && checkDuplicates(mods, loaders) && checkIncompatible(mods, loaders) &&
+                     checkDependencies(mods, loaders))) {
         emitSucceeded();
     }
 }
@@ -200,6 +202,63 @@ bool CheckModFiles::checkDuplicates(ModFolderModel* mods, ModPlatform::ModLoader
                      }) != Answer::Stop;
 }
 
+bool CheckModFiles::checkIncompatible(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders)
+{
+    const auto found = mods->incompatibleMods(loaders);
+    if (found.isEmpty()) {
+        return true;
+    }
+
+    // Of each pair, the one to turn off is the one that takes fewer mods with it, as the mods that need it can't be loaded without
+    // it, and when that is the same, the one said to be incompatible: turning off Sodium for an old Sodium Extra would take Iris
+    // and every other add-on of it too.
+    QSet<Mod*> turnOff;
+    QStringList lines;
+    for (const auto& incompatible : found) {
+        QStringList others;
+        for (const auto* other : incompatible.others) {
+            others << other->fileinfo().fileName();
+        }
+        lines << tr("%1 can't be loaded with %2 (%3)")
+                     .arg(incompatible.mod->fileinfo().fileName(), others.join(", "),
+                          ModFolderModel::describeIncompatibility(incompatible));
+
+        QSet<Mod*> left(incompatible.others.begin(), incompatible.others.end());
+        left.subtract(turnOff);
+        if (turnOff.contains(incompatible.mod) || left.isEmpty()) {
+            continue;
+        }
+        const auto withMod = mods->withDependents(turnOff + QSet<Mod*>{ incompatible.mod }, loaders);
+        const auto withOthers = mods->withDependents(turnOff + left, loaders);
+        turnOff += withMod.size() < withOthers.size() ? QSet<Mod*>{ incompatible.mod } : left;
+    }
+    QStringList fileNames;
+    for (const auto* mod : turnOff) {
+        fileNames << mod->fileinfo().fileName();
+    }
+    fileNames.sort();
+
+    emit logLine(tr("These mods say the mod loader mustn't load them along with others, and it won't start the game with both:\n  %1")
+                     .arg(lines.join("\n  ")),
+                 MessageLevel::Warning);
+    return ask(mods, {
+                         .title = tr("Incompatible mods"),
+                         .text = tr("Some mods say the mod loader mustn't load them along with others, and the game won't start with "
+                                    "both:\n\n"
+                                    "%1\n\n"
+                                    "Turn Them Off takes these out of the game, keeping of each pair the one that more mods need (the "
+                                    "Mods page can turn them back on):\n\n"
+                                    "%2\n\n"
+                                    "To use both, get versions of them that go together.")
+                                     .arg(lines.join("\n"), fileNames.join("\n")),
+                         .button = tr("Turn Them Off"),
+                         .fileNames = fileNames,
+                         .done = tr("Turned off the incompatible mods:"),
+                         .failed = tr("Couldn't turn off the incompatible mods"),
+                         .canceled = tr("Some mods are incompatible with others"),
+                     }) != Answer::Stop;
+}
+
 bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoaderTypes loaders)
 {
     auto missing = mods->modsMissingDependencies(loaders);
@@ -207,9 +266,9 @@ bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoad
         return true;
     }
 
-    // a mod another needs may only be turned off, and can be turned back on, unless the loader would stop at it: at one that is
-    // damaged or made for another version of Minecraft, or at a second copy of an enabled mod, as when an older version of it is
-    // the one enabled
+    // A mod another needs may only be turned off, and can be turned back on, unless the loader would stop at it: at one that is
+    // damaged or made for another version of Minecraft, at a second copy of an enabled mod, as when an older version of it is
+    // the one enabled, or at one it mustn't load along with an enabled mod, as one just turned off for that.
     const auto minecraft = m_parent->instance()->getPackProfile()->getComponentVersion("net.minecraft");
     QSet<QString> enabledIds;
     for (const auto* mod : mods->allMods()) {
@@ -229,7 +288,8 @@ bool CheckModFiles::checkDependencies(ModFolderModel* mods, ModPlatform::ModLoad
                 const bool neededVersion = std::ranges::any_of(
                     versions, [&requirement](const QString& version) { return requirement.acceptsModVersion(version); });
                 if (details.damaged || !details.minecraft.accepts(minecraft) || !neededVersion ||
-                    (enabledIds.contains(provider->mod_id()) && !turnOn.contains(fileName))) {
+                    (enabledIds.contains(provider->mod_id()) && !turnOn.contains(fileName)) ||
+                    mods->incompatibleWithEnabled(*provider, loaders)) {
                     continue;
                 }
                 const auto needed = requirement.isSet() ? tr("%1 %2").arg(id, requirement.text()) : id;

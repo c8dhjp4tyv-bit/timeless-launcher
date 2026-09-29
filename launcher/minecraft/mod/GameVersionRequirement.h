@@ -43,6 +43,9 @@ class GameVersionRequirement {
     /// Whether a mod that needs another takes that version of it, which unlike a version of Minecraft may carry build metadata
     /// after a +, which Fabric and Quilt leave out of comparisons
     bool acceptsModVersion(const QString& version) const;
+    /// Like acceptsModVersion(), but anything this can't read counts as not taken: for the versions of another mod a mod won't be
+    /// loaded with, where a match that is only possible mustn't hold either of them back. Without a requirement, every version is.
+    bool surelyAcceptsModVersion(const QString& version) const;
 
     bool operator==(const GameVersionRequirement& other) const = default;
 
