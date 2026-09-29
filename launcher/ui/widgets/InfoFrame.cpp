@@ -91,13 +91,15 @@ InfoFrame::~InfoFrame()
 
 void InfoFrame::updateWithMod(const Mod& m)
 {
+    // What a mod's metadata says is text, shown as rich text here, so each < in it, as in "<3" or an author's "<name@example.com>",
+    // has to be escaped, or it starts a tag that swallows the rest.
     QString text = "";
     QString name = "";
     QString link = m.homepage();
     if (m.name().isEmpty())
-        name = m.internalId();
+        name = m.internalId().toHtmlEscaped();
     else
-        name = renderColorCodes(m.name());
+        name = renderColorCodes(m.name().toHtmlEscaped());
 
     if (link.isEmpty())
         text = name;
@@ -105,14 +107,14 @@ void InfoFrame::updateWithMod(const Mod& m)
         text = "<a href=\"" + QUrl(link).toEncoded() + "\">" + name + "</a>";
     }
     if (!m.authors().isEmpty())
-        text += " by " + m.authors().join(", ");
+        text += " by " + m.authors().join(", ").toHtmlEscaped();
 
     setName(text);
 
     if (m.description().isEmpty()) {
         setDescription(QString());
     } else {
-        setDescription(renderColorCodes(m.description()));
+        setDescription(renderColorCodes(m.description().toHtmlEscaped()));
     }
 
     setImage(m.icon({ 64, 64 }));
@@ -124,17 +126,18 @@ void InfoFrame::updateWithMod(const Mod& m)
             if (!licenseText.isEmpty()) {
                 licenseText += "\n";  // add newline between licenses
             }
+            const auto url = l.url.toHtmlEscaped();
             if (!l.name.isEmpty()) {
                 if (l.url.isEmpty()) {
-                    licenseText += l.name;
+                    licenseText += l.name.toHtmlEscaped();
                 } else {
-                    licenseText += "<a href=\"" + l.url + "\">" + l.name + "</a>";
+                    licenseText += "<a href=\"" + url + "\">" + l.name.toHtmlEscaped() + "</a>";
                 }
             } else if (!l.url.isEmpty()) {
-                licenseText += "<a href=\"" + l.url + "\">" + l.url + "</a>";
+                licenseText += "<a href=\"" + url + "\">" + url + "</a>";
             }
             if (!l.description.isEmpty() && l.description != l.name) {
-                licenseText += " " + l.description;
+                licenseText += " " + l.description.toHtmlEscaped();
             }
         }
     }
@@ -146,16 +149,17 @@ void InfoFrame::updateWithMod(const Mod& m)
 
     QString issueTracker = "";
     if (!m.issueTracker().isEmpty()) {
+        const auto url = m.issueTracker().toHtmlEscaped();
         issueTracker += tr("Report issues to: ");
-        issueTracker += "<a href=\"" + m.issueTracker() + "\">" + m.issueTracker() + "</a>";
+        issueTracker += "<a href=\"" + url + "\">" + url + "</a>";
     }
     setIssueTracker(issueTracker);
 }
 
 void InfoFrame::updateWithResource(const Resource& resource)
 {
-    const QString homepage = resource.homepage();
-    auto name = renderColorCodes(resource.name());
+    const QString homepage = resource.homepage().toHtmlEscaped();
+    auto name = renderColorCodes(resource.name().toHtmlEscaped());
 
     if (!homepage.isEmpty())
         setName("<a href=\"" + homepage + "\">" + name + "</a>");
@@ -230,36 +234,38 @@ QString InfoFrame::renderColorCodes(QString input)
 
 void InfoFrame::updateWithResourcePack(ResourcePack& resource_pack)
 {
-    QString name = renderColorCodes(resource_pack.name());
+    QString name = renderColorCodes(resource_pack.name().toHtmlEscaped());
 
-    const QString homepage = resource_pack.homepage();
+    const QString homepage = resource_pack.homepage().toHtmlEscaped();
     if (!homepage.isEmpty()) {
         name = "<a href=\"" + homepage + "\">" + name + "</a>";
     }
 
     setName(name);
+    // the description of a resource or data pack is already rich text, made from the pack's own formatting
     setDescription(renderColorCodes(resource_pack.description()));
     setImage(resource_pack.image({ 64, 64 }));
 }
 
 void InfoFrame::updateWithDataPack(DataPack& data_pack)
 {
-    setName(renderColorCodes(data_pack.name()));
+    setName(renderColorCodes(data_pack.name().toHtmlEscaped()));
     setDescription(renderColorCodes(data_pack.description()));
     setImage(data_pack.image({ 64, 64 }));
 }
 
 void InfoFrame::updateWithTexturePack(TexturePack& texture_pack)
 {
-    QString name = renderColorCodes(texture_pack.name());
+    QString name = renderColorCodes(texture_pack.name().toHtmlEscaped());
 
-    const QString homepage = texture_pack.homepage();
+    const QString homepage = texture_pack.homepage().toHtmlEscaped();
     if (!homepage.isEmpty()) {
         name = "<a href=\"" + homepage + "\">" + name + "</a>";
     }
 
     setName(name);
-    setDescription(renderColorCodes(texture_pack.description()));
+    // an old texture pack's pack.txt is plain text
+    setDescription(renderColorCodes(texture_pack.description().toHtmlEscaped()));
     setImage(texture_pack.image({ 64, 64 }));
 }
 

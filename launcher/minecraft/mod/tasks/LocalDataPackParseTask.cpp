@@ -27,6 +27,7 @@
 #include "minecraft/mod/ResourcePack.h"
 
 #include <QCryptographicHash>
+#include <QUrl>
 #include <utility>
 
 namespace DataPackUtils {
@@ -225,7 +226,7 @@ QString buildStyle(const QJsonObject& obj)
 {
     QStringList styles;
     if (auto color = obj["color"].toString(); !color.isEmpty()) {
-        styles << QString("color: %1;").arg(color);
+        styles << QString("color: %1;").arg(color.toHtmlEscaped());
     }
     if (obj.contains("bold")) {
         QString weight = "normal";
@@ -258,7 +259,8 @@ QString processComponent(const QJsonObject& obj, bool strikethrough, bool underl
     underline = obj["underlined"].toBool(underline);
     strikethrough = obj["strikethrough"].toBool(strikethrough);
 
-    QString result = obj["text"].toString();
+    // the pack's text is text, which a < in, as in "<3", would otherwise start a tag that swallows the rest
+    QString result = obj["text"].toString().toHtmlEscaped();
     if (underline) {
         result = QString("<u>%1</u>").arg(result);
     }
@@ -274,8 +276,10 @@ QString processComponent(const QJsonObject& obj, bool strikethrough, bool underl
         auto click_event = obj["clickEvent"].toObject();
         auto action = click_event["action"].toString();
         auto value = click_event["value"].toString();
-        if (action == "open_url" && !value.isEmpty()) {
-            result = QString("<a href=\"%1\">%2</a>").arg(value, result);
+        // only a web link, as in the game, and not one to a file on this computer, which clicking it would open
+        const auto scheme = QUrl(value).scheme().toLower();
+        if (action == "open_url" && (scheme == "http" || scheme == "https")) {
+            result = QString("<a href=\"%1\">%2</a>").arg(value.toHtmlEscaped(), result);
         }
     }
     return result;
@@ -284,7 +288,7 @@ QString processComponent(const QJsonObject& obj, bool strikethrough, bool underl
 QString processComponent(const QJsonValue& value, bool strikethrough, bool underline)
 {
     if (value.isString()) {
-        return value.toString();
+        return value.toString().toHtmlEscaped();
     }
     if (value.isBool()) {
         return value.toBool() ? "true" : "false";
