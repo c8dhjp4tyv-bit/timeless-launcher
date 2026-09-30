@@ -223,8 +223,10 @@ class ResourceFolderModelTest : public QObject {
         { EXEC_UPDATE_TASK(model.installResource(file_mod), QVERIFY) } QCOMPARE(model.size(), 1);
 
         // a folder that can't be written to holds files that can't be removed
+        const auto probe = folder.filePath("probe.txt");
+        QVERIFY(QFile(probe).open(QIODevice::WriteOnly));
         QVERIFY(QFile::setPermissions(tmp.path(), QFileDevice::ReadOwner | QFileDevice::ExeOwner));
-        if (QFileInfo(tmp.path()).isWritable()) {
+        if (QFile::remove(probe)) {
             QFile::setPermissions(tmp.path(), QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
             QSKIP("Files in a folder can be removed here whatever its permissions, as by the administrator.");
         }

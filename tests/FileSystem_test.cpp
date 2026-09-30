@@ -1,5 +1,6 @@
 #include <QDir>
 #include <QProcess>
+#include <QScopeGuard>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
@@ -73,6 +74,31 @@ class LinkTask : public Task {
 #endif
     bool m_linkRecursive = true;
 };
+
+#ifdef Q_OS_LINUX
+// A data folder of its own for the trash to be in, so that a test doesn't put anything in the user's.
+class TrashHome {
+   public:
+    TrashHome() : m_before(qgetenv("XDG_DATA_HOME")) { qputenv("XDG_DATA_HOME", m_folder.path().toUtf8()); }
+    ~TrashHome()
+    {
+        if (m_before.isNull()) {
+            qunsetenv("XDG_DATA_HOME");
+        } else {
+            qputenv("XDG_DATA_HOME", m_before);
+        }
+    }
+    TrashHome(const TrashHome&) = delete;
+    TrashHome& operator=(const TrashHome&) = delete;
+
+    bool isValid() const { return m_folder.isValid(); }
+    QString filePath(const QString& name) const { return m_folder.filePath(name); }
+
+   private:
+    QTemporaryDir m_folder;
+    QByteArray m_before;
+};
+#endif
 
 class FileSystemTest : public QObject {
     Q_OBJECT
@@ -408,6 +434,55 @@ class FileSystemTest : public QObject {
         QVERIFY(QDir(temp.path()).mkdir("folder"));
         QVERIFY(FS::setAsideBroken(temp.filePath("folder")).isEmpty());
     }
+
+#ifdef Q_OS_LINUX
+    void test_trash()
+    {
+        // the trash is in a data folder of its own here, not the user's
+        const TrashHome data;
+        QVERIFY(data.isValid());
+
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto path = temp.filePath("file.txt");
+        FS::write(path, "content");
+
+        QString inTrash;
+        QVERIFY(FS::trash(path, &inTrash));
+        QVERIFY(!QFileInfo::exists(path));
+        QCOMPARE(FS::read(inTrash), QByteArray("content"));
+    }
+
+    void test_trashOfAFileThatStays()
+    {
+        // A file that can't be removed from its folder isn't trashed. Qt says it was, having linked it into the trash and failed to
+        // unlink it from where it was: the file has to stay where it is, with nothing in the trash to show for it.
+        const TrashHome data;
+        QVERIFY(data.isValid());
+
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto path = temp.filePath("file.txt");
+        const auto probe = temp.filePath("probe.txt");
+        FS::write(path, "content");
+        FS::write(probe, "probe");
+
+        // a folder that can't be written to holds files that can't be removed
+        QVERIFY(QFile::setPermissions(temp.path(), QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        const auto restorePermissions = qScopeGuard(
+            [&] { QFile::setPermissions(temp.path(), QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner); });
+        if (QFile::remove(probe)) {
+            QSKIP("Files in a folder can be removed here whatever its permissions, as by the administrator.");
+        }
+
+        QString inTrash;
+        QVERIFY(!FS::trash(path, &inTrash));
+        QVERIFY(inTrash.isEmpty());
+        QVERIFY(QFileInfo::exists(path));
+        QVERIFY(QDir(data.filePath("Trash/files")).isEmpty());
+        QVERIFY(QDir(data.filePath("Trash/info")).isEmpty());
+    }
+#endif
 
     void test_getDesktop() { QCOMPARE(FS::getDesktopDir(), QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)); }
 
