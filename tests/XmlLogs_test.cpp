@@ -306,7 +306,7 @@ class XmlLogParseTest : public QObject {
         // text, and shown as it came.
         const QString start = R"(  <log4j:Event logger="a" timestamp="1745005150597" level="INFO" thread="main">)";
         QStringList lines = { start };
-        const QString filler(qsizetype(40) * 1024, 'x');
+        const QString filler(static_cast<qsizetype>(40 * 1024), 'x');
         for (int i = 0; i < 8; i++) {
             lines << filler;
         }

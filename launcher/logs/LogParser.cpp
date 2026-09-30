@@ -88,7 +88,7 @@ static bool isPotentialLog4JStart(QStringView buffer)
 
 /// How much of an event that isn't complete yet is waited for. Every line that arrives has the parser read all of it again, and
 /// nothing the game logs comes near this size.
-static constexpr qsizetype g_maxHeldBack = qsizetype(256) * 1024;
+static constexpr int g_maxHeldBack = 256 * 1024;
 
 LogParser::PlainText LogParser::takeText(qsizetype length)
 {
