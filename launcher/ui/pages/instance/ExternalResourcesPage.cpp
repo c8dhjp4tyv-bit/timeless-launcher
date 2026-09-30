@@ -276,7 +276,21 @@ void ExternalResourcesPage::removeItems(const QItemSelection& selection)
         if (response != QMessageBox::Yes)
             return;
     }
-    m_model->deleteResources(selection.indexes());
+    deleteResources(m_model, selection.indexes());
+}
+
+void ExternalResourcesPage::deleteResources(ResourceFolderModel* model, const QModelIndexList& indexes)
+{
+    if (model->deleteResources(indexes)) {
+        return;
+    }
+    // they are in the list again, as they are still there
+    CustomMessageBox::selectable(this, tr("Couldn't delete"),
+                                 tr("These files couldn't be deleted, as happens when another program has one of them open. Close it "
+                                    "and try again:\n\n%1")
+                                     .arg(model->failedDeletions().join('\n')),
+                                 QMessageBox::Warning)
+        ->exec();
 }
 
 void ExternalResourcesPage::enableItem()

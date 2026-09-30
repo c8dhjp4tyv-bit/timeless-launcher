@@ -191,7 +191,7 @@ void ModFolderPage::removeItems(const QItemSelection& selection)
             m_model->setResourceEnabled(affected, EnableAction::DISABLE);
         }
     }
-    m_model->deleteResources(indexes);
+    deleteResources(m_model, indexes);
 }
 
 void ModFolderPage::downloadMods()

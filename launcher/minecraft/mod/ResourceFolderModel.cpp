@@ -157,12 +157,16 @@ bool ResourceFolderModel::installResource(QString originalPath)
         case ResourceType::SINGLEFILE:
         case ResourceType::ZIPFILE:
         case ResourceType::LITEMOD: {
-            if (QFile::exists(newPath) || QFile::exists(newPath + QString(".disabled"))) {
-                if (!FS::deletePath(newPath)) {
-                    qCritical() << "Cleaning up new location (" << newPath << ") was unsuccessful!";
+            // the copy that is turned off is replaced as well, or both would stay
+            for (const auto& old : { newPath, newPath + QString(".disabled") }) {
+                if (!QFileInfo::exists(old)) {
+                    continue;
+                }
+                if (!FS::deletePath(old)) {
+                    qCritical() << "Cleaning up new location (" << old << ") was unsuccessful!";
                     return false;
                 }
-                qDebug() << newPath << "has been deleted.";
+                qDebug() << old << "has been deleted.";
             }
 
             if (!QFile::copy(originalPath, newPath)) {
@@ -274,6 +278,7 @@ bool ResourceFolderModel::uninstallResource(const QString& fileName, bool preser
 
 bool ResourceFolderModel::deleteResources(const QModelIndexList& indexes)
 {
+    m_failedDeletions.clear();
     if (indexes.isEmpty()) {
         return true;
     }
@@ -284,12 +289,15 @@ bool ResourceFolderModel::deleteResources(const QModelIndexList& indexes)
         }
 
         const auto& resource = m_resources.at(i.row());
-        resource->destroy(indexDir());
+        if (!resource->destroy(indexDir())) {
+            qWarning() << "Couldn't delete" << resource->fileinfo().filePath();
+            m_failedDeletions << resource->fileinfo().fileName();
+        }
     }
 
     update();
 
-    return true;
+    return m_failedDeletions.isEmpty();
 }
 
 void ResourceFolderModel::deleteMetadata(const QModelIndexList& indexes)

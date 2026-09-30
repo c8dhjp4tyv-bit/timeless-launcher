@@ -65,6 +65,9 @@ class ExternalResourcesPage : public QMainWindow, public BasePage {
     void ShowHeaderContextMenu(const QPoint& pos);
 
    protected:
+    /** Deletes the resources from the model, and tells the user about those that couldn't be deleted */
+    void deleteResources(ResourceFolderModel* model, const QModelIndexList& indexes);
+
     MinecraftInstance* m_instance = nullptr;
 
     Ui::ExternalResourcesPage* ui = nullptr;

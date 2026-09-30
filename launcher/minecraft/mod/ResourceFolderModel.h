@@ -96,7 +96,10 @@ class ResourceFolderModel : public QAbstractListModel {
      *  Returns whether the removal was successful.
      */
     virtual bool uninstallResource(const QString& fileName, bool preserveMetadata = false);
+    /** Deletes the resources, and tells whether all of them are gone. The file names of those that aren't are failedDeletions(). */
     virtual bool deleteResources(const QModelIndexList&);
+    /** The file names of the resources the last deleteResources() couldn't delete, as when another program has them open */
+    QStringList failedDeletions() const { return m_failedDeletions; }
     virtual void deleteMetadata(const QModelIndexList&);
 
     /** Applies the given 'action' to the resources in 'indexes'.
@@ -240,6 +243,7 @@ class ResourceFolderModel : public QAbstractListModel {
     // As such, the order in with they appear is very important!
     QList<SortType> m_columnSortKeys = { SortType::Enabled,  SortType::Name, SortType::Date,
                                          SortType::Provider, SortType::Size, SortType::Filename };
+    QStringList m_failedDeletions;
     QStringList m_columnNames = { "Enable", "Name", "Last Modified", "Provider", "Size", "File Name" };
     QStringList m_columnNamesTranslated = { tr("Enable"), tr("Name"), tr("Last Modified"), tr("Provider"), tr("Size"), tr("File Name") };
     QList<QHeaderView::ResizeMode> m_columnResizeModes = { QHeaderView::Interactive, QHeaderView::Stretch,     QHeaderView::Interactive,
