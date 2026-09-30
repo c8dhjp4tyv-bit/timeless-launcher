@@ -245,6 +245,42 @@ class TaskTest : public QObject {
         QVERIFY2(QTest::qWaitFor([&t]() { return t.isFinished(); }, 1000), "Task didn't finish as it should.");
     }
 
+    // A number of tasks to run at once comes from the settings, where anything can be written, and a task that may run none at all
+    // never starts the tasks it holds, nor finishes
+    void test_concurrentRunWithNoRoom_data()
+    {
+        QTest::addColumn<int>("limit");
+
+        QTest::newRow("none") << 0;
+        QTest::newRow("less than none") << -3;
+    }
+
+    void test_concurrentRunWithNoRoom()
+    {
+        QFETCH(const int, limit);
+
+        auto t1 = makeShared<BasicTask>();
+        auto t2 = makeShared<BasicTask>();
+
+        ConcurrentTask t("no room", limit);
+        t.addTask(t1);
+        t.addTask(t2);
+
+        t.start();
+        QVERIFY2(QTest::qWaitFor([&t]() { return t.isFinished(); }, 1000), "Task didn't finish as it should.");
+        QVERIFY(t.wasSuccessful());
+        QVERIFY(t1->wasSuccessful());
+        QVERIFY(t2->wasSuccessful());
+
+        ConcurrentTask later("set to no room");
+        later.setMaxConcurrent(limit);
+        auto t3 = makeShared<BasicTask>();
+        later.addTask(t3);
+        later.start();
+        QVERIFY2(QTest::qWaitFor([&later]() { return later.isFinished(); }, 1000), "Task didn't finish as it should.");
+        QVERIFY(t3->wasSuccessful());
+    }
+
     void test_stackOverflowInConcurrentTask()
     {
         QEventLoop loop;

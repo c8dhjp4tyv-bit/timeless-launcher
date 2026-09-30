@@ -89,6 +89,9 @@ QString LogModel::toPlainText()
 
 void LogModel::setMaxLines(int maxLines)
 {
+    // a log holds a line at the least, or there is nothing for the buffer to wrap around
+    maxLines = qMax(maxLines, 1);
+
     // no-op
     if (maxLines == m_maxLines) {
         return;

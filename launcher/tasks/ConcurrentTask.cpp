@@ -38,7 +38,7 @@
 #include <QDebug>
 #include "tasks/Task.h"
 
-ConcurrentTask::ConcurrentTask(QString task_name, int max_concurrent) : Task(), m_total_max_size(max_concurrent)
+ConcurrentTask::ConcurrentTask(QString task_name, int max_concurrent) : Task(), m_total_max_size(qMax(max_concurrent, 1))
 {
     setObjectName(task_name);
 }
