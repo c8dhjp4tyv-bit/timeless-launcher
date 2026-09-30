@@ -41,13 +41,13 @@ QDCSS::QDCSS(QString s)
     }
 }
 
-std::optional<QString>* QDCSS::get(QString key)
+std::optional<QString> QDCSS::get(const QString& key) const
 {
-    auto found = m_data.find(key);
+    const auto found = m_data.find(key);
 
     if (found == m_data.end() || found->empty()) {
-        return new std::optional<QString>;
+        return std::nullopt;
     }
 
-    return new std::optional<QString>(found->back());
+    return found->back();
 }

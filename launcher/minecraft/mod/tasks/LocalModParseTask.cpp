@@ -677,20 +677,20 @@ ModDetails ReadNilModInfo(QByteArray contents, QString fname)
     ModDetails details;
 
     QDCSS cssData = QDCSS(contents);
-    auto name = cssData.get("@nilmod.name");
-    auto desc = cssData.get("@nilmod.description");
-    auto authors = cssData.get("@nilmod.authors");
+    const auto name = cssData.get("@nilmod.name");
+    const auto desc = cssData.get("@nilmod.description");
+    const auto authors = cssData.get("@nilmod.authors");
 
-    if (name->has_value()) {
-        details.name = name->value();
+    if (name.has_value()) {
+        details.name = name.value();
     }
-    if (desc->has_value()) {
-        details.description = desc->value();
+    if (desc.has_value()) {
+        details.description = desc.value();
     }
-    if (authors->has_value()) {
-        details.authors.append(authors->value());
+    if (authors.has_value()) {
+        details.authors.append(authors.value());
     }
-    details.version = cssData.get("@nilmod.version")->value_or("?");
+    details.version = cssData.get("@nilmod.version").value_or("?");
 
     details.mod_id = fname.remove(".nilmod.css");
 
