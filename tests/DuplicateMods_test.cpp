@@ -217,6 +217,9 @@ class DuplicateModsTest : public QObject {
 
         const auto& old = static_cast<const Mod&>(model.at(indexOf(model, "fabric-old.jar").row()));
         QCOMPARE(old.details().minecraft.text(), ">=1.20.1 <1.21");
+        // and it is what the Minecraft Versions column shows for a mod that came without a page to tell them from
+        QCOMPARE(old.mcVersionsString(), ">=1.20.1 <1.21");
+        QCOMPARE(static_cast<const Mod&>(model.at(indexOf(model, "fabric-any.jar").row())).mcVersionsString(), "");
     }
 
     void missingDependencies()
