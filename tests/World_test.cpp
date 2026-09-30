@@ -99,6 +99,44 @@ class WorldTest : public QObject {
     }
 
    private slots:
+    void damagedLevelDat_data()
+    {
+        QTest::addColumn<QByteArray>("levelDat");
+        QTest::addColumn<QByteArray>("previousLevelDat");
+        QTest::addColumn<QString>("name");
+        QTest::addColumn<bool>("valid");
+
+        const auto damaged = levelDat("Damaged").left(20);
+        // the game reads level.dat_old when level.dat can't be read, as after a crash while saving, so a world that plays fine has
+        // its name; without one, the folder tells it apart from the others rather than a row without a name
+        QTest::newRow("readable") << levelDat("Readable") << levelDat("Older") << "Readable" << true;
+        QTest::newRow("cut short, with an older one") << damaged << levelDat("Older") << "Older" << true;
+        QTest::newRow("empty, with an older one") << QByteArray() << levelDat("Older") << "Older" << true;
+        QTest::newRow("cut short, alone") << damaged << QByteArray() << "world folder" << false;
+        QTest::newRow("cut short, with a damaged older one") << damaged << damaged << "world folder" << false;
+    }
+
+    void damagedLevelDat()
+    {
+        QFETCH(const QByteArray, levelDat);
+        QFETCH(const QByteArray, previousLevelDat);
+        QFETCH(const QString, name);
+        QFETCH(const bool, valid);
+
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto folder = temp.filePath("world folder");
+        FS::write(FS::PathCombine(folder, "level.dat"), levelDat);
+        if (!previousLevelDat.isNull()) {
+            FS::write(FS::PathCombine(folder, "level.dat_old"), previousLevelDat);
+        }
+
+        World world{ QFileInfo(folder) };
+        world.loadMetadata();
+        QCOMPARE(world.name(), name);
+        QCOMPARE(world.isValid(), valid);
+    }
+
     void installFromZip()
     {
         QTemporaryDir temp;
