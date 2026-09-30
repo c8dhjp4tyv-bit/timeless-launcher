@@ -224,8 +224,13 @@ void AccountList::setDefaultAccount(MinecraftAccountPtr newAccount)
             idx++;
         }
         if (currentDefaultAccount != newDefaultAccount) {
-            emit dataChanged(index(currentDefaultAccountIdx), index(currentDefaultAccountIdx, columnCount(QModelIndex()) - 1));
-            emit dataChanged(index(newDefaultAccountIdx), index(newDefaultAccountIdx, columnCount(QModelIndex()) - 1));
+            // there is no row for a default that was never set, or one that is no longer in the list
+            if (currentDefaultAccountIdx != -1) {
+                emit dataChanged(index(currentDefaultAccountIdx), index(currentDefaultAccountIdx, columnCount(QModelIndex()) - 1));
+            }
+            if (newDefaultAccountIdx != -1) {
+                emit dataChanged(index(newDefaultAccountIdx), index(newDefaultAccountIdx, columnCount(QModelIndex()) - 1));
+            }
             m_defaultAccount = newDefaultAccount;
             onDefaultAccountChanged();
         }

@@ -15,6 +15,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <QAbstractItemModelTester>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -24,6 +25,7 @@
 
 #include <FileSystem.h>
 #include <minecraft/auth/AccountList.h>
+#include <minecraft/auth/MinecraftAccount.h>
 
 class AccountListTest : public QObject {
     Q_OBJECT
@@ -81,6 +83,27 @@ class AccountListTest : public QObject {
         QVERIFY(list.loadList());
         QVERIFY(QFileInfo::exists(path));
         QVERIFY(!QFileInfo::exists(path + ".broken"));
+    }
+
+    void changingTheDefault()
+    {
+        // The list tells its views exactly what changed, also when the first account becomes the default, which had no default
+        // before it.
+        AccountList list;
+        const QAbstractItemModelTester tester(&list, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        const auto first = MinecraftAccount::createOffline("First");
+        const auto second = MinecraftAccount::createOffline("Second");
+
+        list.addAccount(first);
+        list.addAccount(second);
+        list.setDefaultAccount(first);
+        QCOMPARE(list.defaultAccount(), first);
+        list.setDefaultAccount(second);
+        QCOMPARE(list.defaultAccount(), second);
+        list.setDefaultAccount(nullptr);
+        QVERIFY(!list.defaultAccount());
+        list.removeAccount(list.index(0));
+        QCOMPARE(list.count(), 1);
     }
 
     void noList()
