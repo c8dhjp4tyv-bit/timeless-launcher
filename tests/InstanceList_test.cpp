@@ -51,6 +51,30 @@ class InstanceListTest : public QObject {
         list.on_InstFolderChanged(*instanceDir, second);
         QCOMPARE(list.rowCount(), 0);
     }
+
+    void removingStagingFolders()
+    {
+        // the folders instances are staged in are left over by ones that never got to be created, in the additional instance
+        // folders too, which only the first one was cleaned of
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto first = dir.filePath("first");
+        const auto second = dir.filePath("second");
+        for (const auto& folder : { first, second }) {
+            FS::write(FS::PathCombine(folder, ".tmp", "abc123", "instance.cfg"), "name=Unfinished\n");
+            FS::write(FS::PathCombine(folder, "Finished", "instance.cfg"), "name=Finished\n");
+        }
+
+        INISettingsObject settings(dir.filePath("launcher.cfg"));
+        InstanceList list(&settings, { first, second });
+        QObject::disconnect(&list, &InstanceList::instancesChanged, &list, nullptr);
+        list.removeStagingFolders();
+
+        for (const auto& folder : { first, second }) {
+            QVERIFY(!QFileInfo::exists(FS::PathCombine(folder, ".tmp")));
+            QVERIFY(QFileInfo::exists(FS::PathCombine(folder, "Finished", "instance.cfg")));
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(InstanceListTest)

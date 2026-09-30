@@ -1422,11 +1422,8 @@ void Application::performMainStartupAction()
         qDebug() << "<> Updater started.";
     }
 
-    {  // delete instances tmp dirctory
-        auto instDir = m_settings->get("InstanceDir").toString();
-        const QString tempRoot = FS::PathCombine(instDir, ".tmp");
-        FS::deletePath(tempRoot);
-    }
+    // instances that were being put together when the launcher last stopped, in every instance folder
+    m_instances->removeStagingFolders();
 
     if (!m_urlsToImport.isEmpty()) {
         qDebug() << "<> Importing from url:" << m_urlsToImport;

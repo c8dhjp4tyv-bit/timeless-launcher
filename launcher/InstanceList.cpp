@@ -584,6 +584,13 @@ InstanceList::InstListError InstanceList::loadList()
     return NoError;
 }
 
+void InstanceList::removeStagingFolders()
+{
+    for (const auto& dir : m_instDirs) {
+        FS::deletePath(FS::PathCombine(dir, ".tmp"));
+    }
+}
+
 void InstanceList::migrateTotalPlayTime()
 {
     if (APPLICATION->playtimeSettings()->get("TotalPlayTimeMigrated").toBool()) {
@@ -1045,6 +1052,7 @@ class InstanceStaging : public Task {
         // we actually failed, retry?
         if (sleepTime == maxBackoff) {
             m_backoffTimer.stop();
+            FS::deletePath(m_stagingPath);
             emitFailed(tr("Failed to commit instance, even after multiple retries. It is being blocked by something."));
             return;
         }
