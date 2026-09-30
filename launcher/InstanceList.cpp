@@ -957,9 +957,12 @@ void InstanceList::on_InstFolderChanged([[maybe_unused]] const Setting& setting,
         for (const auto& dir : m_instDirs)
             m_watcher->addPath(dir);
         m_groupsLoaded = false;
-        beginRemoveRows(QModelIndex(), 0, count());
-        m_instances.erase(m_instances.begin(), m_instances.end());
-        endRemoveRows();
+        // rows 0 to count() - 1, and none at all when there are none
+        if (count() > 0) {
+            beginRemoveRows(QModelIndex(), 0, count() - 1);
+            m_instances.erase(m_instances.begin(), m_instances.end());
+            endRemoveRows();
+        }
         emit instancesChanged();
     }
 }
