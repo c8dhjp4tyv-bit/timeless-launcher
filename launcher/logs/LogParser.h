@@ -45,10 +45,6 @@ class LogParser {
     struct PlainText {
         QString message;
     };
-    struct Error {
-        QString errMessage;
-        QXmlStreamReader::Error error;
-    };
 
     using ParsedItem = std::variant<LogEntry, PlainText, Partial>;
 
@@ -58,21 +54,22 @@ class LogParser {
     void appendLine(QAnyStringView data);
     std::optional<ParsedItem> parseNext();
     QList<ParsedItem> parseAvailable();
-    std::optional<Error> getError();
 
     /// guess log level from a line of game log
     static MessageLevel guessLevel(const QString& line, MessageLevel previous);
 
    protected:
     std::optional<LogEntry> parseAttributes();
-    void setError();
-    void clearError();
 
     std::optional<ParsedItem> parseLog4J();
 
    private:
+    /// Hands back the first `length` characters of the buffer, or all of it, as the text they are
+    PlainText takeText(qsizetype length);
+    /// Hands back the first line of the buffer that has anything on it, as the text it is
+    PlainText takeFirstLine();
+
     QString m_buffer;
     QString m_partialData;
     QXmlStreamReader m_parser;
-    std::optional<Error> m_error;
 };

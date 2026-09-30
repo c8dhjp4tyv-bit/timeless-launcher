@@ -230,7 +230,126 @@ class XmlLogParseTest : public QObject {
         QCOMPARE(parseMessages(lines), messages);
     }
 
+    void rootLogger()
+    {
+        // the root logger has no name, and what is logged to it is no less an event: an empty logger used to make the parser give up on
+        // it and on every line after it
+        LogParser parser;
+        QList<LogParser::LogEntry> entries;
+        for (const auto& line : goodEvent("main", "from the root logger", "")) {
+            parser.appendLine(line);
+            for (const auto& item : parser.parseAvailable()) {
+                QVERIFY(std::holds_alternative<LogParser::LogEntry>(item));
+                entries.append(std::get<LogParser::LogEntry>(item));
+            }
+        }
+        for (const auto& line : goodEvent("main", "from a logger", "a")) {
+            parser.appendLine(line);
+            for (const auto& item : parser.parseAvailable()) {
+                QVERIFY(std::holds_alternative<LogParser::LogEntry>(item));
+                entries.append(std::get<LogParser::LogEntry>(item));
+            }
+        }
+
+        QCOMPARE(entries.length(), 2);
+        QCOMPARE(entries[0].message, "from the root logger");
+        QVERIFY(entries[0].logger.isEmpty());
+        QCOMPARE(entries[0].thread, "main");
+        QCOMPARE(entries[1].message, "from a logger");
+        QCOMPARE(entries[1].logger, "a");
+    }
+
+    void unreadableEvents_data()
+    {
+        QTest::addColumn<QStringList>("bad");
+        QTest::addColumn<QStringList>("shown");
+
+        // An event the parser can't read is shown as it came, and what comes after it is read as if it had not been there. Held back
+        // instead, it stood in front of every line after it, so that the game log stopped for the rest of the session.
+        const QString start = R"(  <log4j:Event logger="a" timestamp="1745005150597" level="INFO" thread="main">)";
+        const QString end = "  </log4j:Event>";
+
+        const QString withControl = "    <log4j:Message><![CDATA[colored \x1b[31mred\x1b[0m text]]></log4j:Message>";
+        QTest::newRow("control character in the message")
+            << QStringList{ start, withControl, end } << QStringList{ start.trimmed(), withControl, end };
+
+        const QString withAmpersand = R"(  <log4j:Event logger="a&b" timestamp="1745005150597" level="INFO" thread="main">)";
+        const QString message = "    <log4j:Message><![CDATA[the message]]></log4j:Message>";
+        QTest::newRow("& in an attribute") << QStringList{ withAmpersand, message, end } << QStringList{ withAmpersand, message, end };
+
+        // the time is the first thing the parser looks for, and what it puts the event in order by
+        const QString withoutTime = R"(  <log4j:Event logger="a" timestamp="" level="INFO" thread="main">)";
+        QTest::newRow("no time") << QStringList{ withoutTime, message, end }
+                                 << QStringList{ withoutTime.trimmed() + "\n" + message + "\n" + end };
+
+        QTest::newRow("no message") << QStringList{ start, end } << QStringList{ start.trimmed() + "\n" + end };
+
+        QTest::newRow("text that mentions an event")
+            << QStringList{ "see <log4j:Event for details" } << QStringList{ "see ", "<log4j:Event for details" };
+    }
+
+    void unreadableEvents()
+    {
+        QFETCH(const QStringList, bad);
+        QFETCH(QStringList, shown);
+
+        QStringList lines = bad;
+        lines << goodEvent("main", "the next event", "b") << "plain after";
+        shown << "the next event" << "plain after";
+
+        QCOMPARE(parseMessages(lines), shown);
+    }
+
+    void eventThatNeverEnds()
+    {
+        // An event is waited for as long as it can still be one, but not for ever: what goes on for longer than any log message is
+        // text, and shown as it came.
+        const QString start = R"(  <log4j:Event logger="a" timestamp="1745005150597" level="INFO" thread="main">)";
+        QStringList lines = { start };
+        const QString filler(qsizetype(40) * 1024, 'x');
+        for (int i = 0; i < 8; i++) {
+            lines << filler;
+        }
+        lines << goodEvent("main", "the next event", "b") << "plain after";
+
+        const auto messages = parseMessages(lines);
+        QCOMPARE(messages.mid(messages.length() - 2), QStringList({ "the next event", "plain after" }));
+        qsizetype length = 0;
+        for (const auto& message : messages.mid(0, messages.length() - 2)) {
+            length += message.length();
+        }
+        // all of it, less the line breaks
+        QVERIFY(length >= start.trimmed().length() + 8 * filler.length());
+    }
+
+    void nonAsciiMessages()
+    {
+        // where an event ends is told in characters, whatever their size: none of what follows may be left in the buffer
+        QStringList lines;
+        const QStringList texts = { QString::fromUtf8("caf\xC3\xA9 \xC2\xA7"
+                                                      "6gold"),
+                                    QString::fromUtf8("emoji \xF0\x9F\x98\x80 inside"),
+                                    QString::fromUtf8("\xF0\x9F\x98\x80\xF0\x9F\x98\x80"),
+                                    QString::fromUtf8("\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E") };
+        for (const auto& text : texts) {
+            lines << goodEvent("main", text, "a") << "plain after";
+        }
+
+        QStringList expected;
+        for (const auto& text : texts) {
+            expected << text << "plain after";
+        }
+        QCOMPARE(parseMessages(lines), expected);
+    }
+
    private:
+    /// The lines of an event as the game writes them
+    static QStringList goodEvent(const QString& thread, const QString& message, const QString& logger)
+    {
+        return { QString(R"(  <log4j:Event logger="%1" timestamp="1745005150597" level="INFO" thread="%2">)").arg(logger, thread),
+                 "    <log4j:Message><![CDATA[" + message + "]]></log4j:Message>", "  </log4j:Event>" };
+    }
+
     QList<std::pair<MessageLevel, QString>> parseLines(const QStringList& lines)
     {
         LogParser parser;

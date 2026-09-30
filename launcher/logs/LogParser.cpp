@@ -34,11 +34,6 @@ void LogParser::appendLine(QAnyStringView data)
     m_buffer.append(data.toString());
 }
 
-std::optional<LogParser::Error> LogParser::getError()
-{
-    return m_error;
-}
-
 std::optional<LogParser::LogEntry> LogParser::parseAttributes()
 {
     LogParser::LogEntry entry{
@@ -51,10 +46,10 @@ std::optional<LogParser::LogEntry> LogParser::parseAttributes()
         auto name = attr.name();
         auto value = attr.value();
         if (name == "logger"_L1) {
+            // empty for the root logger, which some mods log to
             entry.logger = value.trimmed().toString();
         } else if (name == "timestamp"_L1) {
             if (value.trimmed().isEmpty()) {
-                m_parser.raiseError("log4j:Event Missing required attribute: timestamp");
                 return {};
             }
             // log4j's XMLLayout reports the event time in milliseconds
@@ -66,25 +61,8 @@ std::optional<LogParser::LogEntry> LogParser::parseAttributes()
             entry.thread = value.trimmed().toString();
         }
     }
-    if (entry.logger.isEmpty()) {
-        m_parser.raiseError("log4j:Event Missing required attribute: logger");
-        return {};
-    }
 
     return entry;
-}
-
-void LogParser::setError()
-{
-    m_error = {
-        m_parser.errorString(),
-        m_parser.error(),
-    };
-}
-
-void LogParser::clearError()
-{
-    m_error = {};  // clear previous error
 }
 
 /// Does this slice begin a log4j event?
@@ -108,10 +86,37 @@ static bool isPotentialLog4JStart(QStringView buffer)
     return next.isSpace() || next == '>' || next == '/';
 }
 
+/// How much of an event that isn't complete yet is waited for. Every line that arrives has the parser read all of it again, and
+/// nothing the game logs comes near this size.
+static constexpr qsizetype g_maxHeldBack = qsizetype(256) * 1024;
+
+LogParser::PlainText LogParser::takeText(qsizetype length)
+{
+    if (length <= 0 || length > m_buffer.size()) {
+        length = m_buffer.size();
+    }
+    PlainText text{ m_buffer.left(length) };
+    m_buffer.remove(0, length);
+    m_partialData.clear();
+    return text;
+}
+
+LogParser::PlainText LogParser::takeFirstLine()
+{
+    qsizetype start = 0;
+    while (start < m_buffer.size() && m_buffer.at(start).isSpace()) {
+        start++;
+    }
+    const auto end = m_buffer.indexOf('\n', start);
+    auto text = takeText(end < 0 ? m_buffer.size() : end);
+    if (m_buffer.startsWith('\n')) {
+        m_buffer.remove(0, 1);
+    }
+    return text;
+}
+
 std::optional<LogParser::ParsedItem> LogParser::parseNext()
 {
-    clearError();
-
     if (m_buffer.isEmpty()) {
         return {};
     }
@@ -124,6 +129,7 @@ std::optional<LogParser::ParsedItem> LogParser::parseNext()
 
     // check if we have a full xml log4j event
     bool isCompleteLog4j = false;
+    qsizetype eventLength = 0;
     m_parser.clear();
     m_parser.setNamespaceProcessing(false);
     m_parser.addData(m_buffer);
@@ -153,12 +159,29 @@ std::optional<LogParser::ParsedItem> LogParser::parseNext()
             }
 
             isCompleteLog4j = depth == 0;
+            if (isCompleteLog4j) {
+                eventLength = m_parser.characterOffset();
+            }
         }
     }
 
     if (isCompleteLog4j) {
-        return parseLog4J();
+        if (auto entry = parseLog4J()) {
+            return entry;
+        }
+        // An event that lacks what it must have, as one with no message, is text like any other. Left in the buffer it would stand in
+        // front of everything that comes after it.
+        return takeText(eventLength);
     } else {
+        // Text that begins with an event but can't become one, however many lines follow, is text like any other: a control character
+        // in the message or a & in an attribute make it not XML at all, and something that goes on and on is not an event. Waiting for
+        // the rest of it would hold up everything the game logs from then on.
+        const bool isCutShort = m_parser.hasError() && m_parser.error() == QXmlStreamReader::PrematureEndOfDocumentError;
+        if (isPotentialLog4JStart(QStringView(m_buffer).trimmed()) &&
+            ((m_parser.hasError() && !isCutShort) || m_buffer.size() > g_maxHeldBack)) {
+            return takeFirstLine();
+        }
+
         if (isPotentialLog4JStart(m_buffer)) {
             m_partialData = QString(m_buffer);
             return LogParser::Partial{ QString(m_buffer) };
@@ -200,9 +223,6 @@ QList<LogParser::ParsedItem> LogParser::parseAvailable()
     bool doNext = true;
     while (doNext) {
         auto item_ = parseNext();
-        if (m_error.has_value()) {
-            return {};
-        }
         if (item_.has_value()) {
             auto item = item_.value();
             if (std::holds_alternative<LogParser::Partial>(item)) {
@@ -227,7 +247,6 @@ std::optional<LogParser::ParsedItem> LogParser::parseLog4J()
     if (m_parser.qualifiedName().compare("log4j:Event"_L1, Qt::CaseInsensitive) == 0) {
         auto entry_ = parseAttributes();
         if (!entry_.has_value()) {
-            setError();
             return {};
         }
         auto entry = entry_.value();
@@ -296,12 +315,9 @@ std::optional<LogParser::ParsedItem> LogParser::parseLog4J()
                         m_buffer = m_buffer.right(m_buffer.length() - consumed);
                         // potential whitespace preserved for next item
                     }
-                    clearError();
                     return entryReady;
                 }
-                m_parser.raiseError("log4j:Event Missing required attribute: message");
-                setError();
-                return parseError;
+                return parseError;  // no message
             }
             return noOp;
         };
@@ -341,7 +357,8 @@ std::optional<LogParser::ParsedItem> LogParser::parseLog4J()
         }
     }
 
-    throw std::runtime_error("unreachable: already verified this was a complete log4j:Event");
+    // not reached for what parseNext() has found to be a whole event, but a game log is no place to stop for it
+    return {};
 }
 
 MessageLevel LogParser::guessLevel(const QString& line, MessageLevel previous)
