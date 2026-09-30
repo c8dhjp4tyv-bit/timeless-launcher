@@ -16,7 +16,7 @@ class QDCSS {
     // https://github.com/unascribed/NilLoader/blob/trunk/src/main/java/nilloader/api/lib/qdcss/QDCSS.java
    public:
     QDCSS(QString);
-    std::optional<QString> get(const QString&) const;
+    std::optional<QString>* get(QString);
 
    private:
     QMap<QString, QStringList> m_data;

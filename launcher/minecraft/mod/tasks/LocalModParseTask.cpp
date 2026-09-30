@@ -10,6 +10,8 @@
 #include <QJsonValue>
 #include <QString>
 #include <algorithm>
+#include <memory>
+#include <optional>
 
 #include "Json.h"
 #include "archive/ArchiveReader.h"
@@ -677,20 +679,22 @@ ModDetails ReadNilModInfo(QByteArray contents, QString fname)
     ModDetails details;
 
     QDCSS cssData = QDCSS(contents);
-    const auto name = cssData.get("@nilmod.name");
-    const auto desc = cssData.get("@nilmod.description");
-    const auto authors = cssData.get("@nilmod.authors");
+    // get() hands out a new object with every answer, for the caller to delete
+    auto ask = [&cssData](const QString& key) { return std::unique_ptr<std::optional<QString>>(cssData.get(key)); };
+    const auto name = ask("@nilmod.name");
+    const auto desc = ask("@nilmod.description");
+    const auto authors = ask("@nilmod.authors");
 
-    if (name.has_value()) {
-        details.name = name.value();
+    if (name->has_value()) {
+        details.name = name->value();
     }
-    if (desc.has_value()) {
-        details.description = desc.value();
+    if (desc->has_value()) {
+        details.description = desc->value();
     }
-    if (authors.has_value()) {
-        details.authors.append(authors.value());
+    if (authors->has_value()) {
+        details.authors.append(authors->value());
     }
-    details.version = cssData.get("@nilmod.version").value_or("?");
+    details.version = ask("@nilmod.version")->value_or("?");
 
     details.mod_id = fname.remove(".nilmod.css");
 
