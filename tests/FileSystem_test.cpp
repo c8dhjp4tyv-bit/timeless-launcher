@@ -385,6 +385,30 @@ class FileSystemTest : public QObject {
         QVERIFY(QFileInfo::exists(temp.filePath("kept.txt")));
     }
 
+    void test_setAsideBroken()
+    {
+        // the second file the launcher can't read under a name doesn't take the place of the first
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto path = temp.filePath("accounts.json");
+
+        QVERIFY(FS::setAsideBroken(path).isEmpty());  // nothing there
+
+        FS::write(path, "{\"accounts\": [");
+        QCOMPARE(FS::setAsideBroken(path), path + ".broken");
+        QVERIFY(!QFileInfo::exists(path));
+        QCOMPARE(FS::read(path + ".broken"), QByteArray("{\"accounts\": ["));
+
+        FS::write(path, "not json");
+        QCOMPARE(FS::setAsideBroken(path), path + ".broken2");
+        QCOMPARE(FS::read(path + ".broken"), QByteArray("{\"accounts\": ["));
+        QCOMPARE(FS::read(path + ".broken2"), QByteArray("not json"));
+
+        // a folder is not a file to set aside
+        QVERIFY(QDir(temp.path()).mkdir("folder"));
+        QVERIFY(FS::setAsideBroken(temp.filePath("folder")).isEmpty());
+    }
+
     void test_getDesktop() { QCOMPARE(FS::getDesktopDir(), QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)); }
 
     // In the expected results, ~ stands for a double quote, which moc can't take in a raw string literal.

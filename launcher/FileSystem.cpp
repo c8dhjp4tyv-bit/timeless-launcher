@@ -1846,4 +1846,17 @@ bool removeFiles(QStringList listFile)
     }
     return ret;
 }
+
+QString setAsideBroken(const QString& path)
+{
+    if (!QFileInfo(path).isFile()) {
+        return {};
+    }
+    QString target = path + ".broken";
+    // earlier ones stay, as a launcher that can't read a file is likely to meet the same file again
+    for (int n = 2; QFileInfo::exists(target); n++) {
+        target = path + ".broken" + QString::number(n);
+    }
+    return QFile::rename(path, target) ? target : QString();
+}
 }  // namespace FS
