@@ -316,6 +316,13 @@ bool deleteContents(const QString& path);
 bool removeFiles(QStringList listFile);
 
 /**
+ * Renames a file the launcher couldn't make sense of to a name next to it that isn't taken, as path.broken, so that what the
+ * launcher saves in its place doesn't destroy what the user could still recover from it.
+ * @return The new path, or nothing if there is no such file or it couldn't be renamed.
+ */
+QString setAsideBroken(const QString& path);
+
+/**
  * Trash a folder / file
  */
 bool trash(QString path, QString* pathInTrash = nullptr);

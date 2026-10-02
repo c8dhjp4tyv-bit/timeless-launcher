@@ -273,11 +273,20 @@ int64_t loadSeed(QByteArray data);
 void World::readFromFS(const QFileInfo& file)
 {
     auto bytes = getLevelDatDataFromFS(file);
-    if (bytes.isEmpty()) {
-        m_isValid = false;
+    loadFromLevelDat(bytes);
+    if (!m_isValid) {
+        // Like the game, which keeps the level.dat it had before the last save next to it and reads that when the one it wants is
+        // damaged, as after a crash while saving. Without it a world that plays fine would show up as a row without a name.
+        const auto previous = getDatDataFromFS(file, "level.dat_old");
+        if (!previous.isEmpty()) {
+            loadFromLevelDat(previous);
+        }
+    }
+    if (!m_isValid) {
+        // still a folder in the list, which a name at least tells apart from the others
+        m_actualName = m_folderName;
         return;
     }
-    loadFromLevelDat(bytes);
     m_levelDatTime = file.lastModified();
     if (m_randomSeed == 0) {
         bytes = getWorldGenDataFromFS(file);
@@ -475,6 +484,7 @@ int64_t loadSeed(QByteArray data)
 
 void World::loadFromLevelDat(QByteArray data)
 {
+    m_isValid = false;
     auto levelData = parseLevelDat(data);
     if (!levelData) {
         m_isValid = false;

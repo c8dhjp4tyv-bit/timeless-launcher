@@ -10,6 +10,8 @@
 #include <QJsonValue>
 #include <QString>
 #include <algorithm>
+#include <memory>
+#include <optional>
 
 #include "Json.h"
 #include "archive/ArchiveReader.h"
@@ -677,9 +679,11 @@ ModDetails ReadNilModInfo(QByteArray contents, QString fname)
     ModDetails details;
 
     QDCSS cssData = QDCSS(contents);
-    auto name = cssData.get("@nilmod.name");
-    auto desc = cssData.get("@nilmod.description");
-    auto authors = cssData.get("@nilmod.authors");
+    // get() hands out a new object with every answer, for the caller to delete
+    auto ask = [&cssData](const QString& key) { return std::unique_ptr<std::optional<QString>>(cssData.get(key)); };
+    const auto name = ask("@nilmod.name");
+    const auto desc = ask("@nilmod.description");
+    const auto authors = ask("@nilmod.authors");
 
     if (name->has_value()) {
         details.name = name->value();
@@ -690,7 +694,7 @@ ModDetails ReadNilModInfo(QByteArray contents, QString fname)
     if (authors->has_value()) {
         details.authors.append(authors->value());
     }
-    details.version = cssData.get("@nilmod.version")->value_or("?");
+    details.version = ask("@nilmod.version")->value_or("?");
 
     details.mod_id = fname.remove(".nilmod.css");
 

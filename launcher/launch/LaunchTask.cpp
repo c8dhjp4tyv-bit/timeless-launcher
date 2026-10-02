@@ -232,11 +232,6 @@ bool LaunchTask::parseXmlLogs(const QString& line, MessageLevel level)
 
     parser->appendLine(line);
     auto items = parser->parseAvailable();
-    if (auto err = parser->getError(); err.has_value()) {
-        auto& model = *getLogModel();
-        model.append(MessageLevel::Error, tr("[Log4j Parse Error] Failed to parse log4j log event: %1").arg(err.value().errMessage));
-        return false;
-    }
 
     if (items.isEmpty())
         return true;
@@ -245,8 +240,12 @@ bool LaunchTask::parseXmlLogs(const QString& line, MessageLevel level)
     for (const auto& item : items) {
         if (std::holds_alternative<LogParser::LogEntry>(item)) {
             auto entry = std::get<LogParser::LogEntry>(item);
-            auto msg = QString("[%1] [%2/%3] [%4]: %5")
-                           .arg(entry.timestamp.toString("HH:mm:ss"), entry.thread, entry.levelText, entry.logger, entry.message);
+            // the root logger has no name
+            auto msg =
+                entry.logger.isEmpty()
+                    ? QString("[%1] [%2/%3]: %4").arg(entry.timestamp.toString("HH:mm:ss"), entry.thread, entry.levelText, entry.message)
+                    : QString("[%1] [%2/%3] [%4]: %5")
+                          .arg(entry.timestamp.toString("HH:mm:ss"), entry.thread, entry.levelText, entry.logger, entry.message);
             if (!entry.throwable.isEmpty()) {
                 // on the lines below, as in the game's own log
                 msg += '\n' + entry.throwable;

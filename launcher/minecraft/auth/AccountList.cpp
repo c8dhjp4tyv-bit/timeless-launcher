@@ -224,8 +224,13 @@ void AccountList::setDefaultAccount(MinecraftAccountPtr newAccount)
             idx++;
         }
         if (currentDefaultAccount != newDefaultAccount) {
-            emit dataChanged(index(currentDefaultAccountIdx), index(currentDefaultAccountIdx, columnCount(QModelIndex()) - 1));
-            emit dataChanged(index(newDefaultAccountIdx), index(newDefaultAccountIdx, columnCount(QModelIndex()) - 1));
+            // there is no row for a default that was never set, or one that is no longer in the list
+            if (currentDefaultAccountIdx != -1) {
+                emit dataChanged(index(currentDefaultAccountIdx), index(currentDefaultAccountIdx, columnCount(QModelIndex()) - 1));
+            }
+            if (newDefaultAccountIdx != -1) {
+                emit dataChanged(index(newDefaultAccountIdx), index(newDefaultAccountIdx, columnCount(QModelIndex()) - 1));
+            }
             m_defaultAccount = newDefaultAccount;
             onDefaultAccountChanged();
         }
@@ -310,8 +315,9 @@ QVariant AccountList::data(const QModelIndex& index, int role) const
     if (!index.isValid())
         return QVariant();
 
-    if (index.row() > count())
+    if (index.row() >= count()) {
         return QVariant();
+    }
 
     MinecraftAccountPtr account = at(index.row());
 
@@ -461,17 +467,27 @@ bool AccountList::loadList()
     QJsonParseError parseError;
     QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData, &parseError);
 
+    // Whatever is wrong with the list, saving the (then empty) list of accounts over it would take the accounts from the user for
+    // good, along with the sign-ins they hold, so it is set aside first.
+    const auto keepBroken = [this] {
+        if (const auto kept = FS::setAsideBroken(m_listFilePath); !kept.isEmpty()) {
+            qWarning() << "The account list couldn't be used and was renamed to" << kept;
+        }
+    };
+
     // Fail if the JSON is invalid.
     if (parseError.error != QJsonParseError::NoError) {
         qCritical() << QString("Failed to parse account list file: %1 at offset %2")
                            .arg(parseError.errorString(), QString::number(parseError.offset))
                            .toUtf8();
+        keepBroken();
         return false;
     }
 
     // Make sure the root is an object.
     if (!jsonDoc.isObject()) {
-        qCritical() << "Invalid account list JSON: Root should be an array.";
+        qCritical() << "Invalid account list JSON: Root should be an object.";
+        keepBroken();
         return false;
     }
 
@@ -482,10 +498,8 @@ bool AccountList::loadList()
     if (listVersion == AccountListVersion::MojangMSA)
         return loadV3(root);
 
-    QString newName = "accounts-old.json";
-    qWarning() << "Unknown format version when loading account list. Existing one will be renamed to" << newName;
-    // Attempt to rename the old version.
-    file.rename(newName);
+    qWarning() << "Unknown format version when loading account list.";
+    keepBroken();
     return false;
 }
 

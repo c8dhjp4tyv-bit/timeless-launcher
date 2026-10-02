@@ -241,18 +241,25 @@ Task::Ptr ResourceAPI::getDependencyVersion(const DependencySearchArgs& args, co
         }
 
         QVector<ModPlatform::IndexedVersion> versions;
-        for (auto versionIter : arr) {
-            auto obj = versionIter.toObject();
+        try {
+            for (auto versionIter : arr) {
+                auto obj = versionIter.toObject();
 
-            auto file = loadIndexedPackVersion(obj, ModPlatform::ResourceType::Mod);
-            if (!file.addonId.isValid()) {
-                file.addonId = args.dependency.addonId;
-            }
+                auto file = loadIndexedPackVersion(obj, ModPlatform::ResourceType::Mod);
+                if (!file.addonId.isValid()) {
+                    file.addonId = args.dependency.addonId;
+                }
 
-            if (file.fileId.isValid() &&
-                (!file.loaders || args.loader & file.loaders)) {  // Heuristic to check if the returned value is valid
-                versions.append(file);
+                if (file.fileId.isValid() &&
+                    (!file.loaders || args.loader & file.loaders)) {  // Heuristic to check if the returned value is valid
+                    versions.append(file);
+                }
             }
+        } catch (const JSONValidationError& e) {
+            // a response that lacks what a version has to have is no version, and no reason to stop the launcher
+            qWarning() << "Error while reading" << debugName() << "dependency version:" << e.cause();
+            callbacks.onFail(e.cause(), -1);
+            return;
         }
 
         auto orderSortPredicate = [](const ModPlatform::IndexedVersion& a, const ModPlatform::IndexedVersion& b) -> bool {

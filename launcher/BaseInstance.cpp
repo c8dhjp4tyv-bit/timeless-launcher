@@ -57,7 +57,7 @@ int getConsoleMaxLines(SettingsObject* settings)
     auto lineSetting = settings->getSetting("ConsoleMaxLines");
     bool conversionOk = false;
     int maxLines = lineSetting->get().toInt(&conversionOk);
-    if (!conversionOk) {
+    if (!conversionOk || maxLines < 1) {
         maxLines = lineSetting->defValue().toInt();
         qWarning() << "ConsoleMaxLines has nonsensical value, defaulting to" << maxLines;
     }

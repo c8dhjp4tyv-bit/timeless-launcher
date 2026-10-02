@@ -102,6 +102,13 @@ class InstanceList : public QAbstractListModel {
     int count() const { return static_cast<int>(m_instances.size()); }
 
     InstListError loadList();
+
+    /**
+     * Deletes the folders instances are put together in before they are moved to their place, in every instance folder. Those of
+     * instances that never got to be created, as after a crash or a failed import, are left over otherwise, each as big as the
+     * pack that was being installed.
+     */
+    void removeStagingFolders();
     void saveNow();
 
     /* O(n) */

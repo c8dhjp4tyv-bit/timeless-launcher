@@ -279,14 +279,18 @@ bool Resource::enable(EnableAction action)
 
 auto Resource::destroy(const QDir& indexDir, bool preserveMetadata, bool attemptTrash) -> bool
 {
+    // The file goes first. One that can't be deleted, as when another program has it open, stays, and so must what tells where it
+    // came from, as that is how its updates are found.
+    if (!((attemptTrash && FS::trash(m_fileInfo.filePath())) || FS::deletePath(m_fileInfo.filePath()))) {
+        return false;
+    }
     m_type = ResourceType::UNKNOWN;
 
     if (!preserveMetadata) {
         qDebug() << QString("Destroying metadata for '%1' on purpose").arg(name());
         destroyMetadata(indexDir);
     }
-
-    return (attemptTrash && FS::trash(m_fileInfo.filePath())) || FS::deletePath(m_fileInfo.filePath());
+    return true;
 }
 
 auto Resource::destroyMetadata(const QDir& indexDir) -> void

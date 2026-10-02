@@ -825,7 +825,31 @@ bool trash(QString path, QString* pathInTrash)
     if (IsWindowsServer())
         return false;
 #endif
-    return QFile::moveToTrash(path, pathInTrash);
+    QString inTrash;
+    if (!QFile::moveToTrash(path, &inTrash)) {
+        return false;
+    }
+
+    // Qt puts a file in the trash by linking it there and then unlinking it from where it was, and reports the move as done even when
+    // the unlinking failed, as it does in a folder that can't be written to. The file is still where it was then, with a copy in the
+    // trash, so it hasn't been trashed: take the copy back and say so.
+    const QFileInfo left(path);
+    if (left.exists() || left.isSymLink()) {
+        qWarning() << "Qt moved" << path << "to the trash, but it is still there";
+        if (!inTrash.isEmpty()) {
+            const QFileInfo copy(inTrash);
+            QFile::remove(inTrash);
+            if (copy.dir().dirName() == "files") {
+                QFile::remove(copy.dir().filePath("../info/" + copy.fileName() + ".trashinfo"));
+            }
+        }
+        return false;
+    }
+
+    if (pathInTrash) {
+        *pathInTrash = inTrash;
+    }
+    return true;
 }
 
 QString PathCombine(const QString& path1, const QString& path2)
@@ -1845,5 +1869,18 @@ bool removeFiles(QStringList listFile)
         ret = QFile::remove(file) && ret;
     }
     return ret;
+}
+
+QString setAsideBroken(const QString& path)
+{
+    if (!QFileInfo(path).isFile()) {
+        return {};
+    }
+    QString target = path + ".broken";
+    // earlier ones stay, as a launcher that can't read a file is likely to meet the same file again
+    for (int n = 2; QFileInfo::exists(target); n++) {
+        target = path + ".broken" + QString::number(n);
+    }
+    return QFile::rename(path, target) ? target : QString();
 }
 }  // namespace FS

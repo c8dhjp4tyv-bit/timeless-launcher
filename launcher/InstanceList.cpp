@@ -584,6 +584,13 @@ InstanceList::InstListError InstanceList::loadList()
     return NoError;
 }
 
+void InstanceList::removeStagingFolders()
+{
+    for (const auto& dir : m_instDirs) {
+        FS::deletePath(FS::PathCombine(dir, ".tmp"));
+    }
+}
+
 void InstanceList::migrateTotalPlayTime()
 {
     if (APPLICATION->playtimeSettings()->get("TotalPlayTimeMigrated").toBool()) {
@@ -830,6 +837,17 @@ void InstanceList::loadGroupList()
         return;
     }
 
+    // Whatever is wrong with the file, the next change to a group would save the (then empty) groups over it, and take all of
+    // them from the user for good, so it is set aside first. The legacy file is only read, and stays.
+    const auto keepBroken = [&groupFileName, migratingLegacyGroups] {
+        if (migratingLegacyGroups) {
+            return;
+        }
+        if (const auto kept = FS::setAsideBroken(groupFileName); !kept.isEmpty()) {
+            qWarning() << "The instance group file couldn't be used and was renamed to" << kept;
+        }
+    };
+
     QJsonParseError error;
     QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData, &error);
 
@@ -838,12 +856,14 @@ void InstanceList::loadGroupList()
         qCritical() << QString("Failed to parse instance group file: %1 at offset %2")
                            .arg(error.errorString(), QString::number(error.offset))
                            .toUtf8();
+        keepBroken();
         return;
     }
 
     // if the root of the json wasn't an object, fail
     if (!jsonDoc.isObject()) {
         qWarning() << "Invalid group file. Root entry should be an object.";
+        keepBroken();
         return;
     }
 
@@ -851,12 +871,15 @@ void InstanceList::loadGroupList()
 
     // Make sure the format version matches, otherwise fail.
     if (rootObj.value("formatVersion").toVariant().toInt() != g_GROUP_FILE_FORMAT_VERSION) {
+        qWarning() << "Unknown format version of the instance group file.";
+        keepBroken();
         return;
     }
 
     // Get the groups. if it's not an object, fail
     if (!rootObj.value("groups").isObject()) {
         qWarning() << "Invalid group list JSON: 'groups' should be an object.";
+        keepBroken();
         return;
     }
 
@@ -941,9 +964,12 @@ void InstanceList::on_InstFolderChanged([[maybe_unused]] const Setting& setting,
         for (const auto& dir : m_instDirs)
             m_watcher->addPath(dir);
         m_groupsLoaded = false;
-        beginRemoveRows(QModelIndex(), 0, count());
-        m_instances.erase(m_instances.begin(), m_instances.end());
-        endRemoveRows();
+        // rows 0 to count() - 1, and none at all when there are none
+        if (count() > 0) {
+            beginRemoveRows(QModelIndex(), 0, count() - 1);
+            m_instances.erase(m_instances.begin(), m_instances.end());
+            endRemoveRows();
+        }
         emit instancesChanged();
     }
 }
@@ -1026,6 +1052,7 @@ class InstanceStaging : public Task {
         // we actually failed, retry?
         if (sleepTime == maxBackoff) {
             m_backoffTimer.stop();
+            FS::deletePath(m_stagingPath);
             emitFailed(tr("Failed to commit instance, even after multiple retries. It is being blocked by something."));
             return;
         }

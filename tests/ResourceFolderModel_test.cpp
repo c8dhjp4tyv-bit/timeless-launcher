@@ -193,6 +193,52 @@ class ResourceFolderModelTest : public QObject {
         model.stopWatching();
     }
 
+    void test_installReplacesDisabledCopy()
+    {
+        // adding a file again replaces the copy that was turned off, and doesn't leave the two of them next to each other
+        const QString file_mod = QFINDTESTDATA("testdata/Resources/supercoolmod.jar");
+
+        const QTemporaryDir tmp;
+        ResourceFolderModel model(QDir(tmp.path()), nullptr, false, false);
+
+        { EXEC_UPDATE_TASK(model.installResource(file_mod), QVERIFY) } QCOMPARE(model.size(), 1);
+        QVERIFY(model.at(0).enable(EnableAction::DISABLE));
+        QVERIFY(QFileInfo::exists(QDir(tmp.path()).filePath("supercoolmod.jar.disabled")));
+
+        { EXEC_UPDATE_TASK(model.installResource(file_mod), QVERIFY) }
+
+        QCOMPARE(QDir(tmp.path()).entryList(QDir::Files), QStringList{ "supercoolmod.jar" });
+        QCOMPARE(model.size(), 1);
+    }
+
+    void test_deleteResourceThatStays()
+    {
+        // A resource that can't be deleted, as when another program has it open, stays in the list, is named as the one that stays,
+        // and isn't reported as deleted.
+        const QString file_mod = QFINDTESTDATA("testdata/Resources/supercoolmod.jar");
+
+        const QTemporaryDir tmp;
+        const QDir folder(tmp.path());
+        ResourceFolderModel model(folder, nullptr, false, false);
+        { EXEC_UPDATE_TASK(model.installResource(file_mod), QVERIFY) } QCOMPARE(model.size(), 1);
+
+        // a folder that can't be written to holds files that can't be removed
+        const auto probe = folder.filePath("probe.txt");
+        QVERIFY(QFile(probe).open(QIODevice::WriteOnly));
+        QVERIFY(QFile::setPermissions(tmp.path(), QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        if (QFile::remove(probe)) {
+            QFile::setPermissions(tmp.path(), QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+            QSKIP("Files in a folder can be removed here whatever its permissions, as by the administrator.");
+        }
+
+        const auto deleted = model.deleteResources({ model.index(0, 0) });
+        QFile::setPermissions(tmp.path(), QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+
+        QVERIFY(!deleted);
+        QCOMPARE(model.failedDeletions(), QStringList{ "supercoolmod.jar" });
+        QVERIFY(folder.exists("supercoolmod.jar"));
+    }
+
     void test_enable_disable()
     {
         QString folder_resource = QFINDTESTDATA("testdata/Resources/test_folder");

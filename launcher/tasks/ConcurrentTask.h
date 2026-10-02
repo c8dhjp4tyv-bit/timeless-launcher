@@ -56,7 +56,8 @@ class ConcurrentTask : public Task {
     ~ConcurrentTask() override;
 
     // safe to call before starting the task
-    void setMaxConcurrent(int max_concurrent) { m_total_max_size = max_concurrent; }
+    // A task that may run none at once never starts the tasks it holds, so it may run one at the least, whatever a setting says
+    void setMaxConcurrent(int max_concurrent) { m_total_max_size = qMax(max_concurrent, 1); }
 
     bool canAbort() const override { return true; }
 

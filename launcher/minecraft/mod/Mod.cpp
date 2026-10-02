@@ -236,6 +236,10 @@ auto Mod::mcVersions() const -> QStringList
 
 auto Mod::mcVersionsString() const -> QString
 {
+    // A mod that wasn't downloaded here has no page to tell the versions of Minecraft from, but says which it works with itself
+    if (!metadata()) {
+        return details().minecraft.text();
+    }
     return mcVersions().join(", ");
 }
 

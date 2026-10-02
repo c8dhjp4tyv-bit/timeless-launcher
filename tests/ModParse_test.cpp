@@ -547,6 +547,36 @@ class ModParseTest : public QObject {
         QCOMPARE(mod.details().providedVersions.value("example"), QStringList{ "1.2.3" });
     }
 
+    void nilModInfo()
+    {
+        // NilLoader mods say what they are in a CSS file named after the mod, next to a file that marks the jar as one of theirs
+        const QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("mod.jar");
+        QVERIFY(writeJar(path, { { "META-INF/nil/mappings.json", "{}" },
+                                 { "example.nilmod.css",
+                                   "@nilmod {\n  name: \"Example Mod\";\n  version: '1.2.3';\n  description: \"Does things\";\n"
+                                   "  authors: \"Someone\";\n}\n" } }));
+        Mod mod{ QFileInfo(path) };
+        QVERIFY(ModUtils::process(mod));
+        QCOMPARE(mod.mod_id(), "example");
+        QCOMPARE(mod.name(), "Example Mod");
+        QCOMPARE(mod.version(), "1.2.3");
+        QCOMPARE(mod.details().description, "Does things");
+        QCOMPARE(mod.details().authors, QStringList{ "Someone" });
+
+        // one that says less than that has no name, and the version is not known
+        const auto bare = dir.filePath("bare.jar");
+        QVERIFY(writeJar(
+            bare, { { "META-INF/nil/mappings.json", "{}" }, { "other.nilmod.css", "@nilmod {\n  description: \"Only this\";\n}\n" } }));
+        Mod bareMod{ QFileInfo(bare) };
+        QVERIFY(ModUtils::process(bareMod));
+        QCOMPARE(bareMod.mod_id(), "other");
+        QCOMPARE(bareMod.version(), "?");
+        QCOMPARE(bareMod.details().description, "Only this");
+        QVERIFY(bareMod.details().authors.isEmpty());
+    }
+
     void missingZipEndOfAFileThatIsGone()
     {
         // nothing can be told of a file that can't be read, so it doesn't count as damaged
