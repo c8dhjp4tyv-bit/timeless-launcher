@@ -109,20 +109,18 @@ MSALoginDialog::~MSALoginDialog()
     delete ui;
 }
 
-namespace {
-QString redLines(const QString& reason)
+QString MSALoginDialog::failureText(const QString& reason)
 {
     QString processed;
     for (const auto& line : reason.split('\n')) {
         if (line.size()) {
-            processed += "<font color='red'>" + line + "</font><br />";
+            processed += "<font color='red'>" + line.toHtmlEscaped() + "</font><br />";
         } else {
             processed += "<br />";
         }
     }
     return processed;
 }
-}  // namespace
 
 void MSALoginDialog::onFlowFailed(const shared_qobject_ptr<AuthFlow>& flow, const QString& reason)
 {
@@ -133,11 +131,11 @@ void MSALoginDialog::onFlowFailed(const shared_qobject_ptr<AuthFlow>& flow, cons
     if (flow == m_authflow_task) {
         ui->stackedWidget2->setCurrentIndex(0);
         ui->loadingLabel2->setText(flow->getStatus());
-        ui->status2->setText(redLines(reason));
+        ui->status2->setText(failureText(reason));
     } else {
         ui->stackedWidget->setCurrentIndex(0);
         ui->loadingLabel->setText(flow->getStatus());
-        ui->status->setText(redLines(reason));
+        ui->status->setText(failureText(reason));
     }
     ui->stackedWidget->adjustSize();
     ui->stackedWidget->updateGeometry();

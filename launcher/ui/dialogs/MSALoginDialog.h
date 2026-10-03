@@ -34,6 +34,9 @@ class MSALoginDialog : public QDialog {
     static MinecraftAccountPtr newAccount(QWidget* parent);
     int exec() override;
 
+    /// The reason of a failure as the red lines of a status label, which shows text as rich text: the reason is text, whatever is in it
+    static QString failureText(const QString& reason);
+
    private:
     explicit MSALoginDialog(QWidget* parent = 0);
 

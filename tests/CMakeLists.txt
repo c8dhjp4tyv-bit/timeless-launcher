@@ -145,8 +145,8 @@ ecm_add_test(PackListSort_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_
 ecm_add_test(ExportToModList_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ExportToModList)
 
-ecm_add_test(MSAStep_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
-    TEST_NAME MSAStep)
+ecm_add_test(MSALogin_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME MSALogin)
 
 ecm_add_test(MinecraftTarget_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME MinecraftTarget)
