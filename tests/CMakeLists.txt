@@ -150,3 +150,6 @@ ecm_add_test(MSALogin_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJO
 
 ecm_add_test(MinecraftTarget_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME MinecraftTarget)
+
+ecm_add_test(StringUtils_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME StringUtils)
