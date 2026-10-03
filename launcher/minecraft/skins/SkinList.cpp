@@ -299,10 +299,15 @@ QString SkinList::installSkin(const QString& file, const QString& name)
         return tr("Not a file.");
     if (!fileinfo.isReadable())
         return tr("File is not readable.");
-    if (fileinfo.suffix() != "png" && !SkinModel(fileinfo.absoluteFilePath()).isValid())
+    if (fileinfo.suffix().compare("png", Qt::CaseInsensitive) != 0 || !SkinModel(fileinfo.absoluteFilePath()).isValid())
         return tr("Skin images must be 64x64 or 64x32 pixel PNG files.");
 
-    QString target = getUniqueFile(m_dir.absolutePath(), name.isEmpty() ? fileinfo.fileName() : name);
+    auto targetName = name.isEmpty() ? fileinfo.fileName() : name;
+    if (QFileInfo(targetName).suffix() != "png") {
+        // the list only knows the files that end in ".png", and not "SKIN.PNG"
+        targetName = QFileInfo(targetName).completeBaseName() + ".png";
+    }
+    QString target = getUniqueFile(m_dir.absolutePath(), targetName);
 
     return QFile::copy(file, target) ? "" : tr("Unable to copy file");
 }

@@ -2,10 +2,15 @@
 
 #include <QDir>
 #include <QFileSystemWatcher>
+#include <QFuture>
 #include <QHeaderView>
+#include <QRegularExpression>
 #include <QSortFilterProxyModel>
 #include <QThread>
 #include <QTreeView>
+
+#include <atomic>
+#include <memory>
 
 #include "Resource.h"
 
@@ -171,6 +176,13 @@ class ResourceFolderModel : public QAbstractListModel {
      */
     QSortFilterProxyModel* createFilterProxyModel(QObject* parent = nullptr);
 
+    /** What the filter box of a list of resources looks for, case aside.
+     *
+     *  The text is a pattern, as the filter box has taken it, unless it can't be one (as "mod [" and "+" aren't): then it is
+     *  the text itself, so that the list doesn't go empty while a name with such a character in it is typed.
+     */
+    static QRegularExpression filterFromText(const QString& text);
+
     SortType columnToSortKey(size_t column) const;
     QList<QHeaderView::ResizeMode> columnResizeModes() const { return m_columnResizeModes; }
 
@@ -259,9 +271,15 @@ class ResourceFolderModel : public QAbstractListModel {
     bool m_firstFolderLoad = true;
 
     Task::Ptr m_currentUpdateTask = nullptr;
-    /** What was actually handed to the thread pool: m_currentUpdateTask itself, or a SequentialTask
-     *  wrapping it when there is a pre-update step. Held so the destructor can wait for it. */
+    /** What the thread pool is given to run: m_currentUpdateTask itself, or a SequentialTask wrapping it when
+     *  there is a pre-update step. Held until the update is done, so that the destructor can tell it to stop. */
     Task::Ptr m_startedUpdateTask = nullptr;
+    /** The run of m_startedUpdateTask on the thread pool, which the destructor waits for. The run holds a reference
+     *  to the task of its own: the ones above are let go of as soon as the update is done, and Task::Ptr frees
+     *  through deleteLater, which may be processed while the pool is still inside the task or has yet to begin it. */
+    QFuture<void> m_updateRun;
+    /** Set by the destructor, so that a run that has not begun by then never does. */
+    std::shared_ptr<std::atomic_bool> m_updateAbandoned;
     bool m_scheduledUpdate = false;
 
     QList<Resource::Ptr> m_resources;

@@ -96,7 +96,7 @@ InstallLoaderDialog::InstallLoaderDialog(PackProfile* profile, const QString& ui
     container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     layout->addWidget(container);
 
-    auto buttonLayout = new QHBoxLayout(this);
+    auto buttonLayout = new QHBoxLayout();
     // small margins look ugly on macOS on modal windows
     #ifndef Q_OS_MACOS
     buttonLayout->setContentsMargins(0, 0, 6, 6);

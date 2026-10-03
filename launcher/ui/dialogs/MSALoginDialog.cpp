@@ -47,6 +47,7 @@
 #include <QColor>
 #include <QPainter>
 #include <QPixmap>
+#include <QRegularExpression>
 #include <QSize>
 #include <QUrl>
 #include <QtWidgets/QPushButton>
@@ -75,6 +76,10 @@ MSALoginDialog::MSALoginDialog(QWidget* parent) : QDialog(parent), ui(new Ui::MS
     });
 
     ui->buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
+
+    // the links of the launcher's own messages (see failureText()) lead to the pages that tell what to do
+    ui->status->setOpenExternalLinks(true);
+    ui->status2->setOpenExternalLinks(true);
 }
 
 int MSALoginDialog::exec()
@@ -82,7 +87,7 @@ int MSALoginDialog::exec()
     // Setup the login task and start it
     m_account = MinecraftAccount::createBlankMSA();
     m_authflow_task = m_account->login(false);
-    connect(m_authflow_task.get(), &Task::failed, this, &MSALoginDialog::onTaskFailed);
+    connect(m_authflow_task.get(), &Task::failed, this, [this](QString reason) { onFlowFailed(m_authflow_task, reason); });
     connect(m_authflow_task.get(), &Task::succeeded, this, &QDialog::accept);
     connect(m_authflow_task.get(), &Task::aborted, this, &MSALoginDialog::reject);
     connect(m_authflow_task.get(), &Task::status, this, &MSALoginDialog::onAuthFlowStatus);
@@ -91,7 +96,7 @@ int MSALoginDialog::exec()
     connect(ui->buttonBox->button(QDialogButtonBox::Cancel), &QPushButton::clicked, m_authflow_task.get(), &Task::abort);
 
     m_devicecode_task.reset(new AuthFlow(m_account->accountData(), AuthFlow::Action::DeviceCode));
-    connect(m_devicecode_task.get(), &Task::failed, this, &MSALoginDialog::onTaskFailed);
+    connect(m_devicecode_task.get(), &Task::failed, this, [this](QString reason) { onFlowFailed(m_devicecode_task, reason); });
     connect(m_devicecode_task.get(), &Task::succeeded, this, &QDialog::accept);
     connect(m_devicecode_task.get(), &Task::aborted, this, &MSALoginDialog::reject);
     connect(m_devicecode_task.get(), &Task::status, this, &MSALoginDialog::onDeviceFlowStatus);
@@ -109,29 +114,84 @@ MSALoginDialog::~MSALoginDialog()
     delete ui;
 }
 
-void MSALoginDialog::onTaskFailed(QString reason)
+namespace {
+
+/// The pages that the launcher's own messages link to, such as the one that says how to fix an Xbox account
+bool isOneOfOurPages(const QString& address)
 {
-    // Set message
-    m_authflow_task->disconnect();
-    m_devicecode_task->disconnect();
-    ui->stackedWidget->setCurrentIndex(0);
-    auto lines = reason.split('\n');
+    static const QStringList s_hosts{ "www.minecraft.net", "help.minecraft.net", "login.live.com", "account.microsoft.com" };
+    const QUrl url(address);
+    return url.scheme() == "https" && s_hosts.contains(url.host());
+}
+
+/// A line of text, with the links of the launcher's own messages in it kept as links and everything else as the text it is
+QString textWithOurLinks(const QString& line)
+{
+    // an anchor with nothing but an address and a name, as it looks once the line is escaped
+    static const QRegularExpression s_link("&lt;a href=&quot;([^&<>\"]*)&quot;&gt;([^&<>]*)&lt;/a&gt;");
+
+    const auto escaped = line.toHtmlEscaped();
+    const QStringView view(escaped);
+    QString result;
+    qsizetype copiedUpTo = 0;
+    auto matches = s_link.globalMatch(escaped);
+    while (matches.hasNext()) {
+        const auto match = matches.next();
+        if (!isOneOfOurPages(match.captured(1))) {
+            continue;
+        }
+        result += view.sliced(copiedUpTo, match.capturedStart() - copiedUpTo);
+        result += "<a href=\"" + match.captured(1) + "\">" + match.captured(2) + "</a>";
+        copiedUpTo = match.capturedEnd();
+    }
+    result += view.sliced(copiedUpTo);
+    return result;
+}
+
+}  // namespace
+
+QString MSALoginDialog::failureText(const QString& reason)
+{
     QString processed;
-    for (auto line : lines) {
+    for (const auto& line : reason.split('\n')) {
         if (line.size()) {
-            processed += "<font color='red'>" + line + "</font><br />";
+            processed += "<font color='red'>" + textWithOurLinks(line) + "</font><br />";
         } else {
             processed += "<br />";
         }
     }
-    ui->status->setText(processed);
-    auto task = m_authflow_task;
-    if (task->failReason().isEmpty()) {
-        task = m_devicecode_task;
+    return processed;
+}
+
+void MSALoginDialog::onFlowFailed(const shared_qobject_ptr<AuthFlow>& flow, const QString& reason)
+{
+    // The sign-in in the browser and the sign-in with a code run side by side, and either of them can
+    // finish the job. One of them failing, as the one with the code does when its request can't be
+    // made, says nothing about the other, so it must not take the other's result away: say what went
+    // wrong on its own side and leave the rest connected.
+    if (flow == m_authflow_task) {
+        ui->stackedWidget2->setCurrentIndex(0);
+        ui->loadingLabel2->setText(flow->getStatus());
+        ui->status2->setText(failureText(reason));
+    } else {
+        ui->stackedWidget->setCurrentIndex(0);
+        ui->loadingLabel->setText(flow->getStatus());
+        ui->status->setText(failureText(reason));
     }
-    if (task) {
-        ui->loadingLabel->setText(task->getStatus());
+    ui->stackedWidget->adjustSize();
+    ui->stackedWidget->updateGeometry();
+    ui->stackedWidget2->adjustSize();
+    ui->stackedWidget2->updateGeometry();
+    this->adjustSize();
+
+    const auto& other = flow == m_authflow_task ? m_devicecode_task : m_authflow_task;
+    if (other->isRunning()) {
+        return;
     }
+
+    // Neither is left: the dialog can only be closed now.
+    m_authflow_task->disconnect();
+    m_devicecode_task->disconnect();
     disconnect(ui->buttonBox->button(QDialogButtonBox::Cancel), &QPushButton::clicked, m_authflow_task.get(), &Task::abort);
     disconnect(ui->buttonBox->button(QDialogButtonBox::Cancel), &QPushButton::clicked, m_devicecode_task.get(), &Task::abort);
     connect(ui->buttonBox->button(QDialogButtonBox::Cancel), &QPushButton::clicked, this, &MSALoginDialog::reject);

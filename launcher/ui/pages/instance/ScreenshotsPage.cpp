@@ -294,6 +294,11 @@ ScreenshotsPage::ScreenshotsPage(QString path, QWidget* parent)
     ui->listView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->listView, &QListView::customContextMenuRequested, this, &ScreenshotsPage::showContextMenu);
     connect(ui->listView, &QAbstractItemView::activated, this, &ScreenshotsPage::onItemActivated);
+
+    if (BuildConfig.IMGUR_CLIENT_ID.isEmpty()) {
+        ui->actionUpload->setToolTip(
+            tr("Uploading screenshots is not set up in this build, which needs the client ID of an Imgur application."));
+    }
 }
 
 bool ScreenshotsPage::eventFilter(QObject* obj, QEvent* evt)
@@ -395,7 +400,8 @@ void ScreenshotsPage::onCurrentSelectionChanged(const QItemSelection& /*selected
         }
     }
 
-    ui->actionUpload->setEnabled(allReadable);
+    // an upload needs the ID of an Imgur application, which a build of the launcher has to bring along
+    ui->actionUpload->setEnabled(allReadable && !BuildConfig.IMGUR_CLIENT_ID.isEmpty());
     ui->actionCopy_Image->setEnabled(allReadable && selected.size() == 1);
     ui->actionCopy_File_s->setEnabled(allReadable);
     ui->actionDelete->setEnabled(allWritable);

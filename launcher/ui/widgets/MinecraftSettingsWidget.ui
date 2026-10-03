@@ -388,7 +388,7 @@ It is most likely you will need to change the path - please refer to the mod's w
               <item>
                <widget class="QCheckBox" name="backUpWorldsBeforeLaunch">
                 <property name="text">
-                 <string>&amp;Automatically back up the worlds played since their last backup before launching</string>
+                 <string>&amp;Automatically back up worlds before launching</string>
                 </property>
                </widget>
               </item>
@@ -432,7 +432,7 @@ It is most likely you will need to change the path - please refer to the mod's w
               <item>
                <widget class="QLabel" name="worldBackupsInfo">
                 <property name="text">
-                 <string>They go to backups/automatic in the game folder, and the oldest are deleted once there are more. Other backups, like the ones made with Back Up on the Worlds page, are never deleted.</string>
+                 <string>Only the worlds played since their last backup are backed up. These backups go to backups/automatic in the game folder, and the oldest are deleted once there are more. Other backups, like the ones made with Back Up on the Worlds page, are never deleted.</string>
                 </property>
                 <property name="wordWrap">
                  <bool>true</bool>

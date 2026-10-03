@@ -36,6 +36,7 @@
 
 #pragma once
 
+#include <QMap>
 #include <QPair>
 #include <QString>
 #include <QUrl>
@@ -86,5 +87,11 @@ QPair<QString, QString> splitFirst(const QString& s, QChar sep, Qt::CaseSensitiv
 QPair<QString, QString> splitFirst(const QString& s, const QRegularExpression& re);
 
 QString htmlListPatch(QString htmlStr);
+
+/**
+ * @brief Replace the `${name}` tokens in a text with the values they are given
+ * A token that has no value is dropped. What a value contains is taken as it is and not looked at for tokens again.
+ */
+QString replaceTokens(const QString& text, const QMap<QString, QString>& values);
 
 }  // namespace StringUtils

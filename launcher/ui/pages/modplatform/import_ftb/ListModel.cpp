@@ -156,7 +156,7 @@ bool FilterModel::lessThan(const QModelIndex& left, const QModelIndex& right) co
         return lv < rv;
 
     } else if (m_currentSorting == Sorting::ByName) {
-        return StringUtils::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) >= 0;
+        return StringUtils::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) > 0;
     }
 
     // UHM, some inavlid value set?!

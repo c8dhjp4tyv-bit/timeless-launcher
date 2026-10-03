@@ -1120,7 +1120,8 @@ QString InstanceList::getStagedInstancePath(const QString& targetDir)
         return {};
     }
 #ifdef Q_OS_WIN32
-    SetFileAttributesA(tempRoot.toStdString().c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED);
+    // the wide version: the narrow one reads a path as the system code page, and the path here is UTF-8
+    SetFileAttributesW(tempRoot.toStdWString().c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED);
 #endif
     return result;
 }

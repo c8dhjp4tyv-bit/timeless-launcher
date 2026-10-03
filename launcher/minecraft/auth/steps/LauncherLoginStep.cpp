@@ -56,12 +56,16 @@ void LauncherLoginStep::onRequestDone(QByteArray* response)
     qCDebug(authCredentials()) << *response;
     if (m_request->error() != QNetworkReply::NoError) {
         qWarning() << "Reply error:" << m_request->error();
+        // The answer says why Mojang refuses, for one thing when it doesn't know the app registration
+        auto message = tr("Failed to get Minecraft access token: %1").arg(m_request->errorString());
+        if (const auto reason = Parsers::parseMojangError(*response); !reason.isEmpty()) {
+            message += "\n" + reason;
+        }
         if (Net::isApplicationError(m_request->error()) && !Net::isServerError(m_request->error())) {
-            emit finished(AccountTaskState::STATE_FAILED_SOFT,
-                          tr("Failed to get Minecraft access token: %1").arg(m_request->errorString()));
+            emit finished(AccountTaskState::STATE_FAILED_SOFT, message);
         } else {
             m_data->networkError = m_request->error();
-            emit finished(AccountTaskState::STATE_OFFLINE, tr("Failed to get Minecraft access token: %1").arg(m_request->errorString()));
+            emit finished(AccountTaskState::STATE_OFFLINE, message);
         }
         return;
     }

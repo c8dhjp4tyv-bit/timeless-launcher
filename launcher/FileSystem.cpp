@@ -1071,6 +1071,31 @@ QString shellCommand(const QString& program, const QStringList& args)
     return quoted.join(' ');
 }
 
+QString appInfoPlist(const QString& name)
+{
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?> \n"
+           "<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" "
+           "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">"
+           "<plist version=\"1.0\">\n"
+           "<dict>\n"
+           "    <key>CFBundleExecutable</key>\n"
+           "    <string>Run.command</string>\n"  // The path to the executable
+           "    <key>CFBundleIconFile</key>\n"
+           "    <string>Icon.icns</string>\n"
+           "    <key>CFBundleName</key>\n"
+           "    <string>" +
+           name.toHtmlEscaped() +
+           "</string>\n"  // Name of the application
+           "    <key>CFBundlePackageType</key>\n"
+           "    <string>APPL</string>\n"
+           "    <key>CFBundleShortVersionString</key>\n"
+           "    <string>1.0</string>\n"
+           "    <key>CFBundleVersion</key>\n"
+           "    <string>1.0</string>\n"
+           "</dict>\n"
+           "</plist>";
+}
+
 // Cross-platform Shortcut creation
 QString createShortcut(QString destination, QString target, QStringList args, QString name, QString icon)
 {
@@ -1130,27 +1155,7 @@ QString createShortcut(QString destination, QString target, QStringList args, QS
 
     // Generate the Info.plist
     QTextStream infoStream(&info);
-    infoStream << "<?xml version=\"1.0\" encoding=\"UTF-8\"?> \n"
-                  "<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" "
-                  "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">"
-                  "<plist version=\"1.0\">\n"
-                  "<dict>\n"
-                  "    <key>CFBundleExecutable</key>\n"
-                  "    <string>Run.command</string>\n"  // The path to the executable
-                  "    <key>CFBundleIconFile</key>\n"
-                  "    <string>Icon.icns</string>\n"
-                  "    <key>CFBundleName</key>\n"
-                  "    <string>"
-               << name
-               << "</string>\n"  // Name of the application
-                  "    <key>CFBundlePackageType</key>\n"
-                  "    <string>APPL</string>\n"
-                  "    <key>CFBundleShortVersionString</key>\n"
-                  "    <string>1.0</string>\n"
-                  "    <key>CFBundleVersion</key>\n"
-                  "    <string>1.0</string>\n"
-                  "</dict>\n"
-                  "</plist>";
+    infoStream << appInfoPlist(name);
 
     return application.path();
 #elif defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD) || defined(Q_OS_OPENBSD)

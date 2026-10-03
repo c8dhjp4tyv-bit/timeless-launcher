@@ -400,14 +400,15 @@ void WorldListPage::launchWorldTool(const QString& name, const QString& command)
         return;
     }
 
-    const auto program = args.takeFirst();
-    auto* process = new QProcess(this);
-    process->setWorkingDirectory(folderPath);
-    process->start(program, args);
-    if (!process->waitForStarted()) {
+    // A tool is a program of its own, which goes on when this window is closed: a process that belongs to this page would be killed
+    // with it, along with whatever the player has not saved in the tool yet.
+    QProcess process;
+    process.setProgram(args.takeFirst());
+    process.setArguments(args);
+    process.setWorkingDirectory(folderPath);
+    if (!process.startDetached()) {
         QMessageBox::warning(this->parentWidget(), tr("Tool failed to start!"),
-                             tr("The tool could not be started.\nError: %1").arg(process->errorString()));
-        process->deleteLater();
+                             tr("The tool could not be started.\nError: %1").arg(process.errorString()));
     }
 }
 

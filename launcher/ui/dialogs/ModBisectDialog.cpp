@@ -61,8 +61,12 @@ ModBisectDialog::ModBisectDialog(MinecraftInstance* instance, ModFolderModel* mo
     auto font = m_heading->font();
     font.setBold(true);
     m_heading->setFont(font);
+    // the heading and the text start at the top, one below the other, and what is left over goes below them
+    m_heading->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_heading->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     layout->addWidget(m_heading);
     m_text->setWordWrap(true);
+    m_text->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     layout->addWidget(m_text);
     m_offList->setSelectionMode(QAbstractItemView::NoSelection);
     layout->addWidget(m_offList, 1);

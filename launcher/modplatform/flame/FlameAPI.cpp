@@ -220,7 +220,7 @@ QList<ModPlatform::Category> FlameAPI::loadModCategories(const QByteArray& respo
     QJsonDocument doc = QJsonDocument::fromJson(response, &parseError);
     if (parseError.error != QJsonParseError::NoError) {
         qWarning() << "Error while parsing JSON response from categories at" << parseError.offset << "reason:" << parseError.errorString();
-        qWarning() << *response;
+        qWarning() << response;
         return categories;
     }
 

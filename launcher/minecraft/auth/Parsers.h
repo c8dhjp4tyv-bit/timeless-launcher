@@ -16,4 +16,7 @@ bool parseMinecraftProfile(QByteArray& data, MinecraftProfile& output);
 bool parseMinecraftProfileMojang(QByteArray& data, MinecraftProfile& output);
 bool parseMinecraftEntitlements(QByteArray& data, MinecraftEntitlement& output);
 bool parseRolloutResponse(QByteArray& data, bool& result);
+
+/// The reason a service of Mojang gives for refusing a request, or nothing if the answer doesn't give one
+QString parseMojangError(const QByteArray& data);
 }  // namespace Parsers

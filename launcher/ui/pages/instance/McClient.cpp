@@ -13,6 +13,9 @@
 // Long enough for a busy server on the other side of the world, short enough not to leave the list waiting on one that's gone
 constexpr auto g_timeout = std::chrono::seconds(15);
 
+// A status is JSON of at most 32767 characters, favicon and all, so this is far more than any server has to say
+constexpr int g_maxResponseLength = 1 << 20;
+
 McClient::McClient(QObject* parent, QString domain, QString ip, const uint16_t port)
     : QObject(parent), m_domain(std::move(domain)), m_ip(std::move(ip)), m_port(port)
 {}
@@ -73,6 +76,13 @@ void McClient::readRawResponse()
         } catch (const Exception& e) {
             m_responseReadState = ResponseReadState::Finished;
             emitFail(e.cause());
+            return;
+        }
+        // A server that announces more than that is not worth the memory of waiting for it, which it could keep filling
+        if (m_wantedRespLength < 0 || m_wantedRespLength > g_maxResponseLength) {
+            m_responseReadState = ResponseReadState::Finished;
+            emitFail(QString("Response too long (%1 bytes)").arg(m_wantedRespLength));
+            m_socket.abort();
             return;
         }
         m_responseReadState = ResponseReadState::GotLength;

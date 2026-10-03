@@ -33,8 +33,11 @@
  *      limitations under the License.
  */
 
+#include <QFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThreadPool>
 #include <QTimer>
 #include "BaseInstance.h"
 
@@ -239,6 +242,37 @@ class ResourceFolderModelTest : public QObject {
         QVERIFY(folder.exists("supercoolmod.jar"));
     }
 
+    void test_destroyWithUpdateInFlight()
+    {
+        // The update of a list runs on the global thread pool. A list that is gone before the pool has begun its update, as
+        // when a resource has just been deleted and the page is closed, must not leave the pool with a task that has been freed.
+        const QString file_mod = QFINDTESTDATA("testdata/Resources/supercoolmod.jar");
+
+        const QTemporaryDir tmp;
+        for (int i = 0; i < 6; ++i) {
+            QVERIFY(QFile::copy(file_mod, QDir(tmp.path()).filePath(QString("mod%1.jar").arg(i))));
+        }
+
+        // A thread that leaves as soon as it has nothing to do makes every update need a new one, which is when a task is
+        // handed over before it is begun.
+        auto* pool = QThreadPool::globalInstance();
+        const auto expiry = pool->expiryTimeout();
+        pool->setExpiryTimeout(1);
+        const auto restore = qScopeGuard([pool, expiry] { pool->setExpiryTimeout(expiry); });
+
+        for (int i = 0; i < 200; ++i) {
+            {
+                ResourceFolderModel gone(QDir(tmp.path()), nullptr, false, false);
+                QVERIFY(gone.update());
+            }
+
+            // and what comes next, as the next test does: a list of its own, updated and waited for
+            ResourceFolderModel model(QDir(tmp.path()), nullptr, false, false);
+            EXEC_UPDATE_TASK(model.update(), QVERIFY)
+            QCOMPARE(model.size(), 6);
+        }
+    }
+
     void test_enable_disable()
     {
         QString folder_resource = QFINDTESTDATA("testdata/Resources/test_folder");
@@ -288,6 +322,50 @@ class ResourceFolderModelTest : public QObject {
         QVERIFY(!res_2.enable(initial_enabled_res_2 ? EnableAction::ENABLE : EnableAction::DISABLE));
         QVERIFY(res_2.enabled() == initial_enabled_res_2);
         QVERIFY(res_2.internalId() == id_2);
+    }
+
+    void test_filterFromText_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<QStringList>("shown");
+
+        const QStringList all{ "C++ Lib", "Lithium", "Mod (1.0)", "Mod [Fabric]", "Mod 1.0", "Sodium" };
+        QTest::newRow("nothing typed") << "" << all;
+        QTest::newRow("a name, in any case") << "sodium" << QStringList{ "Sodium" };
+        QTest::newRow("part of a name") << "thi" << QStringList{ "Lithium" };
+        // text that is not a pattern, while it is being typed or because it is meant as it is
+        QTest::newRow("a plus sign") << "+" << QStringList{ "C++ Lib" };
+        QTest::newRow("a bracket not closed yet") << "[" << QStringList{ "Mod [Fabric]" };
+        QTest::newRow("a parenthesis not closed yet") << "mod (" << QStringList{ "Mod (1.0)" };
+        QTest::newRow("a backslash") << "\\" << QStringList{};
+        // and text that is a pattern still is one
+        QTest::newRow("either of two names") << "sodium|lithium" << QStringList{ "Lithium", "Sodium" };
+        QTest::newRow("digits") << "mod \\d\\.\\d" << QStringList{ "Mod 1.0" };
+    }
+
+    void test_filterFromText()
+    {
+        QFETCH(const QString, text);
+        QFETCH(const QStringList, shown);
+
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        const auto filter = ResourceFolderModel::filterFromText(text);
+        QVERIFY(filter.isValid());
+
+        QStringList matching;
+        for (const auto& name : { "C++ Lib", "Lithium", "Mod (1.0)", "Mod [Fabric]", "Mod 1.0", "Sodium" }) {
+            const auto path = tempDir.filePath(QString(name) + ".jar");
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.close();
+
+            if (Resource(path).applyFilter(filter)) {
+                matching << name;
+            }
+        }
+        QCOMPARE(matching, shown);
     }
 };
 

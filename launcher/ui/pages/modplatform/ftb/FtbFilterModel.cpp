@@ -80,7 +80,7 @@ bool FilterModel::lessThan(const QModelIndex& left, const QModelIndex& right) co
     } else if (m_currentSorting == ByInstalls) {
         return leftPack.installs < rightPack.installs;
     } else if (m_currentSorting == ByName) {
-        return StringUtils::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) >= 0;
+        return StringUtils::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) > 0;
     }
 
     // Invalid sorting set, somehow...
