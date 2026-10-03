@@ -41,6 +41,12 @@ This fork does not ship credentials belonging to Prism Launcher. Microsoft authe
 
 The legacy metadata and Forge-library endpoints remain configurable because existing Minecraft installations may depend on them. They are service endpoints, not Timeless Launcher branding.
 
+### Microsoft sign-in
+
+Signing in with a Microsoft account needs the application (client) ID of an Azure app registration owned by the maintainers: a public client for personal Microsoft accounts, with the redirect URIs `http://localhost`, `http://127.0.0.1` and `timeless-launcher://oauth/microsoft`. Mojang also has to approve that ID for the Minecraft services (see <https://aka.ms/AppRegInfo>). Until it has, the sign-in goes as far as the answer `Invalid app registration` from `api.minecraftservices.com/launcher/login`.
+
+Give the ID to a build with `-DLauncher_MSA_CLIENT_ID=<application ID>`, or to an installed launcher in Settings → Services → Microsoft Authentication.
+
 ## Forking and redistribution
 
 You may fork, modify and redistribute this project under the terms of the GPL-3.0-only license. Derived distributions must preserve the applicable copyright and license notices, clearly identify their own branding, and avoid implying affiliation with Timeless Launcher, Prism Launcher, PolyMC or MultiMC.

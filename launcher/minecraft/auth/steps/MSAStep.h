@@ -49,6 +49,10 @@ class MSAStep : public AuthStep {
 
     QString describe() override;
 
+    /// What the browser is answered with once the sign-in has come back to the launcher: a page that says it went through, or a
+    /// redirect to the address given
+    static QString callbackPage(const QString& redirectUrl);
+
    signals:
     void authorizeWithBrowser(const QUrl& url);
 

@@ -34,17 +34,21 @@ class MSALoginDialog : public QDialog {
     static MinecraftAccountPtr newAccount(QWidget* parent);
     int exec() override;
 
+    /// The reason of a failure as the red lines of a status label, which shows text as rich text: the reason is text, whatever is in it
+    static QString failureText(const QString& reason);
+
    private:
     explicit MSALoginDialog(QWidget* parent = 0);
 
    protected slots:
-    void onTaskFailed(QString reason);
     void onDeviceFlowStatus(QString status);
     void onAuthFlowStatus(QString status);
     void authorizeWithBrowser(const QUrl& url);
     void authorizeWithBrowserWithExtra(QString url, QString code, int expiresIn);
 
    private:
+    void onFlowFailed(const shared_qobject_ptr<AuthFlow>& flow, const QString& reason);
+
     Ui::MSALoginDialog* ui;
     MinecraftAccountPtr m_account;
     shared_qobject_ptr<AuthFlow> m_devicecode_task;

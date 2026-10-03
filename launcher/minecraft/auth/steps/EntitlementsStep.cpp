@@ -9,9 +9,10 @@
 #include "Application.h"
 #include "Logging.h"
 #include "minecraft/auth/Parsers.h"
-#include "net/Request.h"
 #include "net/NetJob.h"
+#include "net/NetUtils.h"
 #include "net/RawHeaderProxy.h"
+#include "net/Request.h"
 #include "tasks/Task.h"
 
 EntitlementsStep::EntitlementsStep(AccountData* data) : AuthStep(data) {}
@@ -49,9 +50,29 @@ void EntitlementsStep::onRequestDone(QByteArray* response)
 {
     qCDebug(authCredentials()) << *response;
 
+    if (m_request->error() != QNetworkReply::NoError) {
+        // What came back from a request that failed, as when Mojang limits the requests it answers, says nothing about what the
+        // account owns, and must not take the game away from it
+        qWarning() << "Error getting entitlements:" << m_request->error() << m_request->errorString();
+        auto message = tr("Failed to determine game ownership: %1").arg(m_request->errorString());
+        if (const auto reason = Parsers::parseMojangError(*response); !reason.isEmpty()) {
+            message += "\n" + reason;
+        }
+        if (Net::isApplicationError(m_request->error()) && !Net::isServerError(m_request->error())) {
+            emit finished(AccountTaskState::STATE_FAILED_SOFT, message);
+        } else {
+            m_data->networkError = m_request->error();
+            emit finished(AccountTaskState::STATE_OFFLINE, message);
+        }
+        return;
+    }
+
     // TODO: check presence of same entitlementsRequestId?
     // TODO: validate JWTs?
-    Parsers::parseMinecraftEntitlements(*response, m_data->minecraftEntitlement);
+    if (!Parsers::parseMinecraftEntitlements(*response, m_data->minecraftEntitlement)) {
+        emit finished(AccountTaskState::STATE_FAILED_SOFT, tr("Failed to determine game ownership: the answer could not be read."));
+        return;
+    }
 
     emit finished(AccountTaskState::STATE_WORKING, tr("Got entitlements"));
 }

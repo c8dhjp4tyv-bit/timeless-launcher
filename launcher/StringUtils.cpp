@@ -232,3 +232,21 @@ QString StringUtils::htmlListPatch(QString htmlStr)
     }
     return htmlStr;
 }
+
+QString StringUtils::replaceTokens(const QString& text, const QMap<QString, QString>& values)
+{
+    static const QRegularExpression s_tokenMatcher("\\$\\{(.+)\\}", QRegularExpression::InvertedGreedinessOption);
+
+    const QStringView view(text);
+    QString result;
+    qsizetype copiedUpTo = 0;
+    auto matches = s_tokenMatcher.globalMatch(text);
+    while (matches.hasNext()) {
+        const auto match = matches.next();
+        result.append(view.sliced(copiedUpTo, match.capturedStart() - copiedUpTo));
+        result.append(values.value(match.captured(1)));
+        copiedUpTo = match.capturedEnd();
+    }
+    result.append(view.sliced(copiedUpTo));
+    return result;
+}

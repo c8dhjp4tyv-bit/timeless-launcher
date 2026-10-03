@@ -90,6 +90,7 @@
 #include "AssetsUtils.h"
 #include "MinecraftLoadAndCheck.h"
 #include "PackProfile.h"
+#include "StringUtils.h"
 
 #include "tools/BaseProfiler.h"
 
@@ -500,28 +501,6 @@ QStringList MinecraftInstance::getNativeJars()
     return nativeJars;
 }
 
-static QString replaceTokensIn(const QString& text, const QMap<QString, QString>& with)
-{
-    // TODO: does this still work??
-    QString result;
-    static const QRegularExpression s_token_regexp("\\$\\{(.+)\\}", QRegularExpression::InvertedGreedinessOption);
-    QStringList list;
-    QRegularExpressionMatchIterator i = s_token_regexp.globalMatch(text);
-    int lastCapturedEnd = 0;
-    while (i.hasNext()) {
-        QRegularExpressionMatch match = i.next();
-        result.append(text.mid(lastCapturedEnd, match.capturedStart()));
-        QString key = match.captured(1);
-        auto iter = with.find(key);
-        if (iter != with.end()) {
-            result.append(*iter);
-        }
-        lastCapturedEnd = match.capturedEnd();
-    }
-    result.append(text.mid(lastCapturedEnd));
-    return result;
-}
-
 QStringList MinecraftInstance::extraArguments()
 {
     auto list = BaseInstance::extraArguments();
@@ -537,7 +516,7 @@ QStringList MinecraftInstance::extraArguments()
         QMap<QString, QString> tokenMapping = makeProfileVarMapping(m_components->getProfile());
 
         for (const QString& item : addn) {
-            list.append(replaceTokensIn(item, tokenMapping));
+            list.append(StringUtils::replaceTokens(item, tokenMapping));
         }
     }
     auto agents = m_components->getProfile()->getAgents();
@@ -803,7 +782,7 @@ QStringList MinecraftInstance::processMinecraftArgs(AuthSessionPtr session, Mine
     }
 
     for (int i = 0; i < args.length(); i++) {
-        args[i] = replaceTokensIn(args[i], tokenMapping);
+        args[i] = StringUtils::replaceTokens(args[i], tokenMapping);
     }
     return args;
 }

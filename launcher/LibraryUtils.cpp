@@ -141,9 +141,10 @@ QString findMangoHud()
 QString find(QString libName)
 {
 #ifdef __GLIBC__
-    const char* library = libName.toLocal8Bit().constData();
+    // the name has to stay around for as long as dlopen() looks at it
+    const QByteArray library = libName.toLocal8Bit();
 
-    void* handle = dlopen(library, RTLD_NOW);
+    void* handle = dlopen(library.constData(), RTLD_NOW);
     if (!handle) {
         qCritical() << "dlopen() failed:" << dlerror();
         return {};
