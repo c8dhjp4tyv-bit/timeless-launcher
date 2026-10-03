@@ -500,4 +500,23 @@ bool parseMojangResponse(QByteArray& data, Token& output)
     return true;
 }
 
+QString parseMojangError(const QByteArray& data)
+{
+    // The services of Mojang answer a refusal with {"path":..., "errorType":..., "errorMessage":...,
+    // "developerMessage":...}. What the message says is more than the status code does, as when the app
+    // registration is not one they know.
+    QJsonParseError error;
+    const auto doc = QJsonDocument::fromJson(data, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return {};
+    }
+    const auto object = doc.object();
+    for (const auto key : { QLatin1String("errorMessage"), QLatin1String("developerMessage") }) {
+        const auto value = object.value(key);
+        if (value.isString() && !value.toString().trimmed().isEmpty()) {
+            return value.toString().trimmed().left(300);
+        }
+    }
+    return {};
+}
 }  // namespace Parsers

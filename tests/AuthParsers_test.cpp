@@ -56,6 +56,41 @@ class AuthParsersTest : public QObject {
         MinecraftProfile parsed;
         QVERIFY(!Parsers::parseMinecraftProfileMojang(copy, parsed));
     }
+
+    void mojangError_data()
+    {
+        QTest::addColumn<QByteArray>("data");
+        QTest::addColumn<QString>("expected");
+
+        const QString unknownApp = "Invalid app registration, see https://aka.ms/AppRegInfo for more information";
+        auto refusal = [](const QJsonObject& more) {
+            QJsonObject object{ { "path", "/launcher/login" }, { "errorType", "FORBIDDEN" }, { "error", "FORBIDDEN" } };
+            for (auto it = more.begin(); it != more.end(); ++it) {
+                object.insert(it.key(), it.value());
+            }
+            return QJsonDocument(object).toJson(QJsonDocument::Compact);
+        };
+
+        QTest::newRow("a message") << refusal({ { "errorMessage", unknownApp }, { "developerMessage", "Forbidden" } }) << unknownApp;
+        QTest::newRow("only the message for developers") << refusal({ { "developerMessage", unknownApp } }) << unknownApp;
+        QTest::newRow("a message of nothing") << refusal({ { "errorMessage", "  " }, { "developerMessage", unknownApp } }) << unknownApp;
+        QTest::newRow("blanks around it") << refusal({ { "errorMessage", "  Forbidden\n" } }) << "Forbidden";
+        QTest::newRow("a message that is no text") << refusal({ { "errorMessage", 403 } }) << "";
+        QTest::newRow("no message") << refusal({}) << "";
+        QTest::newRow("a message that goes on and on") << refusal({ { "errorMessage", QString(1000, 'x') } }) << QString(300, 'x');
+        QTest::newRow("nothing") << QByteArray() << "";
+        QTest::newRow("not JSON") << QByteArray("<html>Forbidden</html>") << "";
+        QTest::newRow("an array") << QByteArray("[\"Forbidden\"]") << "";
+        QTest::newRow("null") << QByteArray("null") << "";
+    }
+
+    void mojangError()
+    {
+        QFETCH(const QByteArray, data);
+        QFETCH(const QString, expected);
+
+        QCOMPARE(Parsers::parseMojangError(data), expected);
+    }
 };
 
 QTEST_GUILESS_MAIN(AuthParsersTest)
