@@ -37,8 +37,6 @@
 
 #include "Commandline.h"
 
-#include <algorithm>
-
 /**
  * @file libutil/src/cmdutils.cpp
  */
@@ -155,23 +153,13 @@ QStringList process(const QString& cmd, const QProcessEnvironment& dict)
 
 QString quoteForSplitCommand(const QString& input)
 {
-    // splitArgs() leaves a word as it is, unless it has white space or a quote in it
-    if (std::ranges::none_of(input, [](QChar c) { return c.isSpace() || c == '"' || c == '\''; })) {
+    if (!input.contains(' ')) {
         return input;
     }
 
-    // In quotes, a backslash only escapes a quote or another backslash. That makes a quote need one, and so does a backslash that
-    // comes before a quote, before another backslash, or before the quote that closes the argument.
-    QString quoted = "\"";
-    for (qsizetype i = 0; i < input.length(); i++) {
-        const QChar c = input.at(i);
-        const bool beforeEscaped = i + 1 == input.length() || input.at(i + 1) == '"' || input.at(i + 1) == '\\';
-        if (c == '"' || (c == '\\' && beforeEscaped)) {
-            quoted += '\\';
-        }
-        quoted += c;
-    }
-    return quoted + '"';
+    QString escaped = input;
+    escaped.replace("\"", R"(""")");
+    return "\"" + escaped + "\"";
 }
 
 }  // namespace Commandline

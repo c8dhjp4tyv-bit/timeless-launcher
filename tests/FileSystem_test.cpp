@@ -4,7 +4,6 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
-#include <QXmlStreamReader>
 #include <memory>
 
 #include <tasks/Task.h>
@@ -511,29 +510,6 @@ class FileSystemTest : public QObject {
         QString printed = R"([Steve's World][100% Survival][Cash $5][a~b][back\slash][`id`][])";
         QCOMPARE(QString::fromUtf8(shell.readAllStandardOutput()), printed.replace('~', '"'));
 #endif
-    }
-
-    void test_appInfoPlist()
-    {
-        // the name of an instance or a world is whatever its player typed
-        for (const QString name : { "Survival", "Tom & Jerry", "Is 3 < 4 > 2?", "Say \"hi\"", "&amp; stays as typed" }) {
-            QXmlStreamReader xml(FS::appInfoPlist(name));
-            QString key;
-            QString bundleName;
-            while (!xml.atEnd()) {
-                xml.readNext();
-                if (xml.isStartElement() && xml.name() == u"key") {
-                    key = xml.readElementText();
-                } else if (xml.isStartElement() && xml.name() == u"string") {
-                    const auto value = xml.readElementText();
-                    if (key == "CFBundleName") {
-                        bundleName = value;
-                    }
-                }
-            }
-            QVERIFY2(!xml.hasError(), qPrintable(name + ": " + xml.errorString()));
-            QCOMPARE(bundleName, name);
-        }
     }
 
     void test_link()

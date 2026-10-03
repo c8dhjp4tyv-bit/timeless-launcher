@@ -146,16 +146,6 @@ QString toJSON(QList<Mod*> mods, OptionalData extraData)
     return doc.toJson();
 }
 
-// A field of a CSV line is put in quotes when it has a comma, a quote or a line break in it, and the quotes in it are doubled
-QString toCSVField(QString field)
-{
-    if (!field.contains(',') && !field.contains('"') && !field.contains('\n') && !field.contains('\r')) {
-        return field;
-    }
-    field.replace('"', "\"\"");
-    return '"' + field + '"';
-}
-
 QString toCSV(QList<Mod*> mods, OptionalData extraData)
 {
     QStringList lines;
@@ -164,19 +154,25 @@ QString toCSV(QList<Mod*> mods, OptionalData extraData)
         auto meta = mod->metadata();
         auto modName = mod->name();
 
-        data << toCSVField(modName);
+        data << modName;
         if (extraData & Url)
-            data << toCSVField(mod->homepage());
+            data << mod->homepage();
         if (extraData & Version) {
             auto ver = mod->version();
             if (ver.isEmpty() && meta != nullptr)
                 ver = meta->version().toString();
-            data << toCSVField(ver);
+            data << ver;
         }
-        if (extraData & Authors)
-            data << toCSVField(mod->authors().join(","));
+        if (extraData & Authors) {
+            QString authors;
+            if (mod->authors().length() == 1)
+                authors = mod->authors().back();
+            else if (mod->authors().length() > 1)
+                authors = QString("\"%1\"").arg(mod->authors().join(","));
+            data << authors;
+        }
         if (extraData & FileName)
-            data << toCSVField(mod->fileinfo().fileName());
+            data << mod->fileinfo().fileName();
         lines << data.join(",");
     }
     return lines.join("\n");

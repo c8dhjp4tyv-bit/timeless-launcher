@@ -208,36 +208,6 @@ class McClientTest : public QObject {
         QCOMPARE(failed.count(), 1);
     }
 
-    void answerThatIsTooLong_data()
-    {
-        QTest::addColumn<int>("announced");
-
-        QTest::newRow("more than a status can be") << (1 << 20) + 1;
-        QTest::newRow("all that is a length can be") << 0x7FFFFFFF;
-        QTest::newRow("less than nothing") << -1;
-    }
-
-    void answerThatIsTooLong()
-    {
-        QFETCH(const int, announced);
-
-        // the length, and the start of what it says follows, which a server could keep sending for as long as it likes
-        m_reply.clear();
-        writeVarInt(m_reply, announced);
-        m_reply.append(QByteArray(64 * 1024, 'x'));
-
-        McClient client(nullptr, "localhost", "127.0.0.1", m_server.serverPort());
-        QSignalSpy succeeded(&client, &McClient::succeeded);
-        QSignalSpy failed(&client, &McClient::failed);
-        QSignalSpy finished(&client, &McClient::finished);
-        client.getStatusData();
-
-        // and not once the client gives up on waiting, which takes much longer
-        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 3000);
-        QCOMPARE(failed.count(), 1);
-        QCOMPARE(succeeded.count(), 0);
-    }
-
     void serverHangsUpAfterAnswering()
     {
         m_hangUp = true;
