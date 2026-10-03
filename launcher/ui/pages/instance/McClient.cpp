@@ -140,7 +140,7 @@ void McClient::writeVarInt(QByteArray& data, int value)
         // Note: >>> means that the sign bit is shifted with the rest of the number rather than being left alone
         value >>= 7;
     }
-    data.append(static_cast<uint8_t>(value));  // NOLINT(*-narrowing-conversions)
+    data.append(static_cast<uint8_t>(value)); // NOLINT(*-narrowing-conversions)
 }
 
 // From https://wiki.vg/Protocol#VarInt_and_VarLong
