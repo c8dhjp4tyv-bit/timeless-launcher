@@ -404,6 +404,9 @@ QString desktopEntryExec(const QString& program, const QStringList& args);
 /// A command line as a POSIX shell has to be given it
 QString shellCommand(const QString& program, const QStringList& args);
 
+/// The Info.plist of the app that a shortcut is on macOS, for the app of the given name
+QString appInfoPlist(const QString& name);
+
 enum class FilesystemType {
     FAT,
     NTFS,
