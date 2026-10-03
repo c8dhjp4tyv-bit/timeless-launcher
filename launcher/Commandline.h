@@ -52,9 +52,10 @@ QString expandVariables(const QString& input, const QProcessEnvironment& dict);
 QStringList process(const QString& cmd, const QProcessEnvironment& dict = {});
 
 /**
- * @brief quote a single argument so that QProcess::splitCommand() parses it back out unchanged
+ * @brief quote a single argument so that splitArgs() parses it back out unchanged
  * @param input the argument to quote
  * @return the quoted argument, or the input unchanged if quoting isn't necessary
+ * @note an empty argument can't be written down: splitArgs() leaves it out, quoted or not
  */
 QString quoteForSplitCommand(const QString& input);
 
