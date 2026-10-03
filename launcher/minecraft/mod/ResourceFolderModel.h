@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFileSystemWatcher>
 #include <QHeaderView>
+#include <QRegularExpression>
 #include <QSortFilterProxyModel>
 #include <QThread>
 #include <QTreeView>
@@ -170,6 +171,13 @@ class ResourceFolderModel : public QAbstractListModel {
      *  The actual comparisons and filtering are done directly by the Resource, so to modify behavior go there instead!
      */
     QSortFilterProxyModel* createFilterProxyModel(QObject* parent = nullptr);
+
+    /** What the filter box of a list of resources looks for, case aside.
+     *
+     *  The text is a pattern, as the filter box has taken it, unless it can't be one (as "mod [" and "+" aren't): then it is
+     *  the text itself, so that the list doesn't go empty while a name with such a character in it is typed.
+     */
+    static QRegularExpression filterFromText(const QString& text);
 
     SortType columnToSortKey(size_t column) const;
     QList<QHeaderView::ResizeMode> columnResizeModes() const { return m_columnResizeModes; }

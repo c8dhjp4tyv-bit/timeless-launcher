@@ -185,7 +185,7 @@ set(Launcher_NEWS_RSS_URL "${Launcher_PROJECT_URL}/releases.atom" CACHE STRING "
 set(Launcher_NEWS_OPEN_URL "${Launcher_PROJECT_URL}/releases" CACHE STRING "URL that gets opened when the user clicks 'More News'")
 set(Launcher_WIKI_URL "${Launcher_PROJECT_URL}/wiki/" CACHE STRING "URL that gets opened when the user clicks 'Launcher Help'")
 set(Launcher_HELP_URL "${Launcher_PROJECT_URL}/wiki/%1" CACHE STRING "URL (with arg %1 to be substituted with page-id) that gets opened when the user requests help in a dialog window")
-set(Launcher_LOGIN_CALLBACK_URL "${Launcher_PROJECT_URL}" CACHE STRING "URL that gets opened when the user successfully logins.")
+set(Launcher_LOGIN_CALLBACK_URL "" CACHE STRING "URL that gets opened when the user successfully logins. Empty: the browser is shown a page of the launcher's own.")
 
 # Legacy Forge libraries are data, not branding. Keep this endpoint configurable for
 # distributions that provide their own mirror or metadata service.

@@ -36,8 +36,8 @@
 #include "MSAStep.h"
 
 #include <QAbstractOAuth2>
-#include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QOAuthHttpServerReplyHandler>
 #include <QOAuthOobReplyHandler>
 
@@ -118,16 +118,7 @@ MSAStep::MSAStep(AccountData* data, bool silent) : AuthStep(data), m_silent(sile
 
     {
         auto replyHandler = new LoggingOAuthHttpServerReplyHandler(this);
-        replyHandler->setCallbackText(QString(R"XXX(
-    <noscript>
-      <meta http-equiv="Refresh" content="0; URL=%1" />
-    </noscript>
-    Login Successful, redirecting...
-    <script>
-      window.location.replace("%1");
-    </script>
-    )XXX")
-                                          .arg(BuildConfig.LOGIN_CALLBACK_URL));
+        replyHandler->setCallbackText(callbackPage(BuildConfig.LOGIN_CALLBACK_URL));
         m_oauth2.setReplyHandler(replyHandler);
     } else {
         m_oauth2.setReplyHandler(new CustomOAuthOobReplyHandler(this));
@@ -180,6 +171,30 @@ MSAStep::MSAStep(AccountData* data, bool silent) : AuthStep(data), m_silent(sile
 QString MSAStep::describe()
 {
     return tr("Logging in with Microsoft account.");
+}
+
+QString MSAStep::callbackPage(const QString& redirectUrl)
+{
+    if (redirectUrl.isEmpty()) {
+        return QString(R"XXX(
+    <div style="font-family: sans-serif; text-align: center; margin-top: 15vh">
+      <h2>%1</h2>
+      <p>%2</p>
+    </div>
+    )XXX")
+            .arg(tr("Login successful").toHtmlEscaped(),
+                 tr("You can close this tab and go back to %1.").arg(BuildConfig.LAUNCHER_DISPLAYNAME).toHtmlEscaped());
+    }
+    return QString(R"XXX(
+    <noscript>
+      <meta http-equiv="Refresh" content="0; URL=%1" />
+    </noscript>
+    Login Successful, redirecting...
+    <script>
+      window.location.replace("%1");
+    </script>
+    )XXX")
+        .arg(redirectUrl);
 }
 
 void MSAStep::perform()
