@@ -173,7 +173,7 @@ void ExternalResourcesPage::itemActivated(const QModelIndex&)
 void ExternalResourcesPage::filterTextChanged(const QString& newContents)
 {
     m_viewFilter = newContents;
-    m_filterModel->setFilterRegularExpression(ResourceFolderModel::filterFromText(m_viewFilter));
+    m_filterModel->setFilterRegularExpression(m_viewFilter);
 }
 
 bool ExternalResourcesPage::shouldDisplay() const

@@ -93,7 +93,7 @@ bool FilterModel::lessThan(const QModelIndex& left, const QModelIndex& right) co
         Version rv(rightPack.versions.at(0).minecraft);
         return lv < rv;
     } else if (currentSorting == ByName) {
-        return StringUtils::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) > 0;
+        return StringUtils::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) >= 0;
     }
 
     // Invalid sorting set, somehow...

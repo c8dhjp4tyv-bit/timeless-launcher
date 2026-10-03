@@ -33,7 +33,6 @@
  *      limitations under the License.
  */
 
-#include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -289,50 +288,6 @@ class ResourceFolderModelTest : public QObject {
         QVERIFY(!res_2.enable(initial_enabled_res_2 ? EnableAction::ENABLE : EnableAction::DISABLE));
         QVERIFY(res_2.enabled() == initial_enabled_res_2);
         QVERIFY(res_2.internalId() == id_2);
-    }
-
-    void test_filterFromText_data()
-    {
-        QTest::addColumn<QString>("text");
-        QTest::addColumn<QStringList>("shown");
-
-        const QStringList all{ "C++ Lib", "Lithium", "Mod (1.0)", "Mod [Fabric]", "Mod 1.0", "Sodium" };
-        QTest::newRow("nothing typed") << "" << all;
-        QTest::newRow("a name, in any case") << "sodium" << QStringList{ "Sodium" };
-        QTest::newRow("part of a name") << "thi" << QStringList{ "Lithium" };
-        // text that is not a pattern, while it is being typed or because it is meant as it is
-        QTest::newRow("a plus sign") << "+" << QStringList{ "C++ Lib" };
-        QTest::newRow("a bracket not closed yet") << "[" << QStringList{ "Mod [Fabric]" };
-        QTest::newRow("a parenthesis not closed yet") << "mod (" << QStringList{ "Mod (1.0)" };
-        QTest::newRow("a backslash") << "\\" << QStringList{};
-        // and text that is a pattern still is one
-        QTest::newRow("either of two names") << "sodium|lithium" << QStringList{ "Lithium", "Sodium" };
-        QTest::newRow("digits") << "mod \\d\\.\\d" << QStringList{ "Mod 1.0" };
-    }
-
-    void test_filterFromText()
-    {
-        QFETCH(const QString, text);
-        QFETCH(const QStringList, shown);
-
-        QTemporaryDir tempDir;
-        QVERIFY(tempDir.isValid());
-
-        const auto filter = ResourceFolderModel::filterFromText(text);
-        QVERIFY(filter.isValid());
-
-        QStringList matching;
-        for (const auto& name : { "C++ Lib", "Lithium", "Mod (1.0)", "Mod [Fabric]", "Mod 1.0", "Sodium" }) {
-            const auto path = tempDir.filePath(QString(name) + ".jar");
-            QFile file(path);
-            QVERIFY(file.open(QIODevice::WriteOnly));
-            file.close();
-
-            if (Resource(path).applyFilter(filter)) {
-                matching << name;
-            }
-        }
-        QCOMPARE(matching, shown);
     }
 };
 

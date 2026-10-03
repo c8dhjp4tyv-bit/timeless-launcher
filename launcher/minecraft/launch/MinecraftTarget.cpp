@@ -53,10 +53,12 @@ MinecraftTarget MinecraftTarget::parse(const QString& fullAddress, bool useWorld
 
     quint16 realPort = 25565;
     if (split.size() > 1) {
-        // a number that is no port, as 70000 is not, is as good as no number: it is not taken for another port
         bool ok;
-        const auto port = split[1].toUShort(&ok);
-        realPort = ok ? port : 25565;
+        realPort = split[1].toUInt(&ok);
+
+        if (!ok) {
+            realPort = 25565;
+        }
     }
 
     return MinecraftTarget{ realAddress, realPort };

@@ -843,15 +843,6 @@ QSortFilterProxyModel* ResourceFolderModel::createFilterProxyModel(QObject* pare
     return new ProxyModel(parent);
 }
 
-QRegularExpression ResourceFolderModel::filterFromText(const QString& text)
-{
-    QRegularExpression pattern(text, QRegularExpression::CaseInsensitiveOption);
-    if (!pattern.isValid()) {
-        pattern.setPattern(QRegularExpression::escape(text));
-    }
-    return pattern;
-}
-
 SortType ResourceFolderModel::columnToSortKey(size_t column) const
 {
     Q_ASSERT(m_columnSortKeys.size() == columnCount());
