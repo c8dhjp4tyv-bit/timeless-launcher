@@ -74,7 +74,7 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : Q
 
     // Add custom buttons to the page container layout.
     {
-        auto horizontalLayout = new QHBoxLayout(this);
+        auto horizontalLayout = new QHBoxLayout();
         horizontalLayout->setObjectName(QStringLiteral("horizontalLayout"));
         horizontalLayout->setContentsMargins(0, 0, 6, 6);
 

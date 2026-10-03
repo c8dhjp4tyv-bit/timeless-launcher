@@ -193,13 +193,13 @@ InstallDialog::InstallDialog(const QString& uid, MinecraftInstance* instance, QW
     container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     layout->addWidget(container);
 
-    auto buttonLayout = new QHBoxLayout(this);
+    auto buttonLayout = new QHBoxLayout();
     // small margins look ugly on macOS on modal windows
     #ifndef Q_OS_MACOS
     buttonLayout->setContentsMargins(0, 0, 6, 6);
     #endif
 
-    auto refreshLayout = new QHBoxLayout(this);
+    auto refreshLayout = new QHBoxLayout();
 
     auto refreshButton = new QPushButton(tr("&Refresh"), this);
     connect(refreshButton, &QPushButton::clicked, this, [this] { pageCast(container->selectedPage())->loadList(); });
