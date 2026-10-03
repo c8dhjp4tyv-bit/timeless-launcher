@@ -138,3 +138,6 @@ ecm_add_test(ModrinthUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSIO
 
 ecm_add_test(FlameUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME FlameUpdate)
+
+ecm_add_test(PackListSort_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME PackListSort)
