@@ -38,13 +38,14 @@ class MSALoginDialog : public QDialog {
     explicit MSALoginDialog(QWidget* parent = 0);
 
    protected slots:
-    void onTaskFailed(QString reason);
     void onDeviceFlowStatus(QString status);
     void onAuthFlowStatus(QString status);
     void authorizeWithBrowser(const QUrl& url);
     void authorizeWithBrowserWithExtra(QString url, QString code, int expiresIn);
 
    private:
+    void onFlowFailed(const shared_qobject_ptr<AuthFlow>& flow, const QString& reason);
+
     Ui::MSALoginDialog* ui;
     MinecraftAccountPtr m_account;
     shared_qobject_ptr<AuthFlow> m_devicecode_task;
