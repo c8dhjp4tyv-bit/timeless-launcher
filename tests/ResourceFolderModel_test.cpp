@@ -34,8 +34,10 @@
  */
 
 #include <QFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThreadPool>
 #include <QTimer>
 #include "BaseInstance.h"
 
@@ -238,6 +240,37 @@ class ResourceFolderModelTest : public QObject {
         QVERIFY(!deleted);
         QCOMPARE(model.failedDeletions(), QStringList{ "supercoolmod.jar" });
         QVERIFY(folder.exists("supercoolmod.jar"));
+    }
+
+    void test_destroyWithUpdateInFlight()
+    {
+        // The update of a list runs on the global thread pool. A list that is gone before the pool has begun its update, as
+        // when a resource has just been deleted and the page is closed, must not leave the pool with a task that has been freed.
+        const QString file_mod = QFINDTESTDATA("testdata/Resources/supercoolmod.jar");
+
+        const QTemporaryDir tmp;
+        for (int i = 0; i < 6; ++i) {
+            QVERIFY(QFile::copy(file_mod, QDir(tmp.path()).filePath(QString("mod%1.jar").arg(i))));
+        }
+
+        // A thread that leaves as soon as it has nothing to do makes every update need a new one, which is when a task is
+        // handed over before it is begun.
+        auto* pool = QThreadPool::globalInstance();
+        const auto expiry = pool->expiryTimeout();
+        pool->setExpiryTimeout(1);
+        const auto restore = qScopeGuard([pool, expiry] { pool->setExpiryTimeout(expiry); });
+
+        for (int i = 0; i < 200; ++i) {
+            {
+                ResourceFolderModel gone(QDir(tmp.path()), nullptr, false, false);
+                QVERIFY(gone.update());
+            }
+
+            // and what comes next, as the next test does: a list of its own, updated and waited for
+            ResourceFolderModel model(QDir(tmp.path()), nullptr, false, false);
+            EXEC_UPDATE_TASK(model.update(), QVERIFY)
+            QCOMPARE(model.size(), 6);
+        }
     }
 
     void test_enable_disable()

@@ -11,6 +11,7 @@
 #include <QStyle>
 #include <QThreadPool>
 #include <QUrl>
+#include <QtConcurrentRun>
 #include <algorithm>
 #include <utility>
 
@@ -52,33 +53,30 @@ ResourceFolderModel::ResourceFolderModel(const QDir& dir, MinecraftInstance* ins
 ResourceFolderModel::~ResourceFolderModel()
 {
     // The update task runs on the global thread pool and reaches back into this model through the
-    // callback that builds resources, so it has to be stopped before anything it touches goes away.
-    // Destroying the model mid-update used to leave that task running against freed members, and
-    // because Task::Ptr deletes through deleteLater the task object itself could be freed while the
-    // pool was still inside executeTask() - which showed up as std::bad_function_call.
-    if (auto started = m_startedUpdateTask) {
-        // Nothing may call back into a model that is being destroyed, and the finished handler would
-        // otherwise start the update that was queued behind this one.
-        m_scheduledUpdate = false;
-        disconnect(started.get(), nullptr, this, nullptr);
-        if (m_currentUpdateTask) {
-            disconnect(m_currentUpdateTask.get(), nullptr, this, nullptr);
-        }
-
-        // If it never left the queue we can simply take it back; otherwise ask it to stop and wait
-        // for the pool to actually leave it.
-        if (!QThreadPool::globalInstance()->tryTake(started.get())) {
-            started->abort();
-
-            auto current = m_currentUpdateTask;
-            while (started->isRunning() || (current && current->isRunning())) {
-                QThread::msleep(10);
-            }
-        }
-
-        m_startedUpdateTask.reset();
-        m_currentUpdateTask.reset();
+    // callback that builds resources, so the pool has to be done with it before anything it touches
+    // goes away. The task can't say when that is: until the pool begins it, it says it isn't running,
+    // just as it does once it is done, and it says so before it is done with emitting its signals.
+    // The run is what to wait for, after making sure that one that has not begun never does and that
+    // one that has stops early.
+    if (m_updateAbandoned) {
+        m_updateAbandoned->store(true);
     }
+
+    // Nothing may call back into a model that is being destroyed, and the finished handler would
+    // otherwise start the update that was queued behind this one.
+    m_scheduledUpdate = false;
+    for (auto* task : { m_startedUpdateTask.get(), m_currentUpdateTask.get() }) {
+        if (task != nullptr) {
+            disconnect(task, nullptr, this, nullptr);
+        }
+    }
+    if (m_startedUpdateTask) {
+        m_startedUpdateTask->abort();
+    }
+    m_updateRun.waitForFinished();
+
+    m_startedUpdateTask.reset();
+    m_currentUpdateTask.reset();
 
     m_resourceResolverThread.quit();
     while (!m_resourceResolverThread.wait(100)) {
@@ -394,6 +392,7 @@ bool ResourceFolderModel::update()
         m_currentUpdateTask.get(), &Task::finished, this,
         [this] {
             m_currentUpdateTask.reset();
+            m_startedUpdateTask.reset();
             if (m_scheduledUpdate) {
                 m_scheduledUpdate = false;
                 update();
@@ -416,13 +415,16 @@ bool ResourceFolderModel::update()
         m_startedUpdateTask = m_currentUpdateTask;
     }
 
-    // Keep a reference until whatever we start is done with itself. The destructor needs it to wait
-    // on the thread pool, and dropping it early would hand the pool a task it no longer owns.
-    connect(
-        m_startedUpdateTask.get(), &Task::finished, this, [this] { m_startedUpdateTask.reset(); },
-        Qt::ConnectionType::QueuedConnection);
-
-    QThreadPool::globalInstance()->start(m_startedUpdateTask.get());
+    // The pool gets a reference of its own rather than a pointer to ours: the task is let go of when the
+    // update is done, and what is freed through deleteLater may be freed while the pool is still inside
+    // it or, with the model gone, before the pool has even begun it.
+    auto abandoned = std::make_shared<std::atomic_bool>(false);
+    m_updateAbandoned = abandoned;
+    m_updateRun = QtConcurrent::run(QThreadPool::globalInstance(), [started = m_startedUpdateTask, abandoned] {
+        if (!abandoned->load()) {
+            started->start();
+        }
+    });
 
     return true;
 }
