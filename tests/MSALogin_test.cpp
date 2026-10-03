@@ -60,6 +60,49 @@ class MSALoginTest : public QObject {
         QVERIFY(!shown.contains("<b>"));
         QVERIFY(shown.contains("&lt;a href=&quot;https://example.org&quot;&gt;Fix it&lt;/a&gt; &amp; &lt;b&gt;more&lt;/b&gt;"));
     }
+
+    void failureTextLinks_data()
+    {
+        QTest::addColumn<QString>("reason");
+        QTest::addColumn<bool>("kept");
+
+        // what the launcher itself says when Xbox refuses an account
+        QTest::newRow("the store")
+            << "Buy the game on <a href=\"https://www.minecraft.net/en-us/store/minecraft-java-edition\">minecraft.net</a> first." << true;
+        QTest::newRow("the help of Minecraft")
+            << "Set up your account according to <a "
+               "href=\"https://help.minecraft.net/hc/en-us/articles/4408968616077\">help.minecraft.net</a>."
+            << true;
+        QTest::newRow("the login of Microsoft")
+            << "Login to <a href=\"https://login.live.com/login.srf\">login.live.com</a> to prove your age." << true;
+        QTest::newRow("the family page") << "Login to <a href=\"https://account.microsoft.com/family/\">account.microsoft.com</a> now."
+                                         << true;
+        // and what a server may put in its answers is not a link
+        QTest::newRow("another page") << "<a href=\"https://example.org\">Fix it</a>" << false;
+        QTest::newRow("a page that starts like one of ours")
+            << "<a href=\"https://login.live.com.example.org/\">login.live.com</a>" << false;
+        QTest::newRow("a page behind a name that is one of ours")
+            << "<a href=\"https://login.live.com@example.org/\">login.live.com</a>" << false;
+        QTest::newRow("a page without https") << "<a href=\"http://login.live.com/\">login.live.com</a>" << false;
+        QTest::newRow("a link that does more than link")
+            << "<a href=\"https://login.live.com/\" onclick=\"steal()\">login.live.com</a>" << false;
+        QTest::newRow("markup in the name of a link") << "<a href=\"https://login.live.com/\"><b>login.live.com</b></a>" << false;
+        QTest::newRow("a link that is not closed") << "<a href=\"https://login.live.com/\">login.live.com" << false;
+    }
+
+    /// The links of the launcher's own messages stay links, and nothing else that looks like markup does
+    void failureTextLinks()
+    {
+        QFETCH(const QString, reason);
+        QFETCH(const bool, kept);
+
+        const auto shown = MSALoginDialog::failureText(reason);
+        if (kept) {
+            QCOMPARE(shown, "<font color='red'>" + reason + "</font><br />");
+        } else {
+            QCOMPARE(shown, "<font color='red'>" + reason.toHtmlEscaped() + "</font><br />");
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(MSALoginTest)

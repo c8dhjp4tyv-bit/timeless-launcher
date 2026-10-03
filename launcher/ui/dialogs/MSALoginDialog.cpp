@@ -47,6 +47,7 @@
 #include <QColor>
 #include <QPainter>
 #include <QPixmap>
+#include <QRegularExpression>
 #include <QSize>
 #include <QUrl>
 #include <QtWidgets/QPushButton>
@@ -75,6 +76,10 @@ MSALoginDialog::MSALoginDialog(QWidget* parent) : QDialog(parent), ui(new Ui::MS
     });
 
     ui->buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
+
+    // the links of the launcher's own messages (see failureText()) lead to the pages that tell what to do
+    ui->status->setOpenExternalLinks(true);
+    ui->status2->setOpenExternalLinks(true);
 }
 
 int MSALoginDialog::exec()
@@ -109,12 +114,48 @@ MSALoginDialog::~MSALoginDialog()
     delete ui;
 }
 
+namespace {
+
+/// The pages that the launcher's own messages link to, such as the one that says how to fix an Xbox account
+bool isOneOfOurPages(const QString& address)
+{
+    static const QStringList s_hosts{ "www.minecraft.net", "help.minecraft.net", "login.live.com", "account.microsoft.com" };
+    const QUrl url(address);
+    return url.scheme() == "https" && s_hosts.contains(url.host());
+}
+
+/// A line of text, with the links of the launcher's own messages in it kept as links and everything else as the text it is
+QString textWithOurLinks(const QString& line)
+{
+    // an anchor with nothing but an address and a name, as it looks once the line is escaped
+    static const QRegularExpression s_link("&lt;a href=&quot;([^&<>\"]*)&quot;&gt;([^&<>]*)&lt;/a&gt;");
+
+    const auto escaped = line.toHtmlEscaped();
+    const QStringView view(escaped);
+    QString result;
+    qsizetype copiedUpTo = 0;
+    auto matches = s_link.globalMatch(escaped);
+    while (matches.hasNext()) {
+        const auto match = matches.next();
+        if (!isOneOfOurPages(match.captured(1))) {
+            continue;
+        }
+        result += view.sliced(copiedUpTo, match.capturedStart() - copiedUpTo);
+        result += "<a href=\"" + match.captured(1) + "\">" + match.captured(2) + "</a>";
+        copiedUpTo = match.capturedEnd();
+    }
+    result += view.sliced(copiedUpTo);
+    return result;
+}
+
+}  // namespace
+
 QString MSALoginDialog::failureText(const QString& reason)
 {
     QString processed;
     for (const auto& line : reason.split('\n')) {
         if (line.size()) {
-            processed += "<font color='red'>" + line.toHtmlEscaped() + "</font><br />";
+            processed += "<font color='red'>" + textWithOurLinks(line) + "</font><br />";
         } else {
             processed += "<br />";
         }
