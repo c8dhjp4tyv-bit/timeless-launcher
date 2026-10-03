@@ -39,7 +39,11 @@ class ExportToModListTest : public QObject {
                              const QStringList& authors) const
     {
         const auto path = m_dir.filePath(fileName);
-        QFile(path).open(QIODevice::WriteOnly);
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly)) {
+            qFatal("Can't create %s", qPrintable(path));
+        }
+        file.close();
 
         auto mod = std::make_unique<Mod>(QFileInfo(path));
         ModDetails details;
