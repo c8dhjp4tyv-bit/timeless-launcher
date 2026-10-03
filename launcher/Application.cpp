@@ -1382,16 +1382,30 @@ void Application::performMainStartupAction()
 
             if (!m_profileToUse.isEmpty()) {
                 accountToUse = accounts()->getAccountByProfileName(m_profileToUse);
-                if (!accountToUse) {
-                    return;
+                if (accountToUse) {
+                    qDebug() << "   Launching with account" << m_profileToUse;
+                } else {
+                    // A shortcut outlives the account it names, as when the player changes their name. Returning here left the launcher
+                    // running without a window and without a word.
+                    qWarning() << "   There is no account named" << m_profileToUse << "to launch with";
+                    auto* dialog = CustomMessageBox::selectable(
+                        nullptr, tr("Account not found"),
+                        tr("There is no account named %1 to launch %2 with. Choose an account in the launcher and launch it again.")
+                            .arg(m_profileToUse, inst->name()),
+                        QMessageBox::Warning);
+                    dialog->exec();
+                    delete dialog;
                 }
-                qDebug() << "   Launching with account" << m_profileToUse;
             }
 
-            launch(inst, m_launchOffline ? LaunchMode::Offline : LaunchMode::Normal, targetToJoin, accountToUse, m_offlineName);
+            if (m_profileToUse.isEmpty() || accountToUse) {
+                const bool launched =
+                    launch(inst, m_launchOffline ? LaunchMode::Offline : LaunchMode::Normal, targetToJoin, accountToUse, m_offlineName);
 
-            if (!m_showMainWindow) {
-                return;
+                // When nothing was launched there is no window of the game's to wait for, and the launcher would run on unseen
+                if (launched && !m_showMainWindow) {
+                    return;
+                }
             }
         }
     }
