@@ -412,6 +412,12 @@ bool parseMinecraftEntitlements(QByteArray& data, MinecraftEntitlement& output)
     }
 
     auto obj = doc.object();
+    // An account that owns nothing gets an empty list. An answer without a list is not about what the account owns (it may be Mojang
+    // saying that it cannot tell), and must not be read as an account that owns nothing.
+    if (!obj.value("items").isArray()) {
+        qWarning() << "The entitlements answer has no list of items";
+        return false;
+    }
     output.canPlayMinecraft = false;
     output.ownsMinecraft = false;
 

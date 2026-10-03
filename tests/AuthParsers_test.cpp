@@ -91,6 +91,56 @@ class AuthParsersTest : public QObject {
 
         QCOMPARE(Parsers::parseMojangError(data), expected);
     }
+
+    void minecraftEntitlements_data()
+    {
+        QTest::addColumn<QByteArray>("data");
+        QTest::addColumn<bool>("understood");
+        QTest::addColumn<bool>("owns");
+        QTest::addColumn<bool>("canPlay");
+
+        const auto answer = [](const QStringList& names) {
+            QJsonArray items;
+            for (const auto& name : names) {
+                items.append(QJsonObject{ { "name", name }, { "signature", "x" } });
+            }
+            return QJsonDocument(QJsonObject{ { "items", items }, { "signature", "x" }, { "keyId", "1" } }).toJson(QJsonDocument::Compact);
+        };
+
+        QTest::newRow("the game") << answer({ "product_minecraft", "game_minecraft" }) << true << true << true;
+        QTest::newRow("game pass") << answer({ "game_minecraft" }) << true << false << true;
+        QTest::newRow("owns it, can't play yet") << answer({ "product_minecraft" }) << true << true << false;
+        QTest::newRow("other things only") << answer({ "game_minecraft_bedrock" }) << true << false << false;
+        // an account that owns nothing gets a list with nothing in it...
+        QTest::newRow("an empty list") << answer({}) << true << false << false;
+        // ...and what is not a list of what the account owns is not read as an account that owns nothing
+        QTest::newRow("a refusal") << QByteArray(
+                                          R"({"path":"/entitlements/license","errorType":"TOO_MANY_REQUESTS","error":"TOO_MANY_REQUESTS"})")
+                                   << false << true << true;
+        QTest::newRow("items that are not a list") << QByteArray(R"({"items":5})") << false << true << true;
+        QTest::newRow("an object with nothing in it") << QByteArray("{}") << false << true << true;
+        QTest::newRow("an array") << QByteArray("[]") << false << true << true;
+        QTest::newRow("not JSON") << QByteArray("<html>Bad gateway</html>") << false << true << true;
+        QTest::newRow("nothing") << QByteArray() << false << true << true;
+    }
+
+    void minecraftEntitlements()
+    {
+        QFETCH(const QByteArray, data);
+        QFETCH(const bool, understood);
+        QFETCH(const bool, owns);
+        QFETCH(const bool, canPlay);
+
+        // an account that was found to own the game, and what is read from the answer goes over it
+        MinecraftEntitlement entitlement;
+        entitlement.ownsMinecraft = true;
+        entitlement.canPlayMinecraft = true;
+
+        auto copy = data;
+        QCOMPARE(Parsers::parseMinecraftEntitlements(copy, entitlement), understood);
+        QCOMPARE(entitlement.ownsMinecraft, owns);
+        QCOMPARE(entitlement.canPlayMinecraft, canPlay);
+    }
 };
 
 QTEST_GUILESS_MAIN(AuthParsersTest)
