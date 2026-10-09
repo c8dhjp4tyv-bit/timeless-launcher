@@ -37,6 +37,7 @@
 
 #include "ServersPage.h"
 #include "Application.h"
+#include "ServerEntry.h"
 #include "ServerPingTask.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/widgets/InfoFrame.h"
@@ -60,68 +61,6 @@
 #include <QTimer>
 
 static const int COLUMN_COUNT = 4;  // name, address, players, ping
-
-struct Server {
-    // Types
-    enum class AcceptsTextures : int { ASK = 0, ALWAYS = 1, NEVER = 2 };
-
-    // Methods
-    Server() { m_name = QObject::tr("Minecraft Server"); }
-    Server(const QString& name, const QString& address)
-    {
-        m_name = name;
-        m_address = address;
-    }
-    Server(nbt::tag_compound& server)
-    {
-        m_address = QString::fromStdString(readString(server, "ip"));
-        m_name = QString::fromStdString(readString(server, "name"));
-        m_icon = QByteArray::fromBase64(QByteArray::fromStdString(readString(server, "icon")));
-
-        if (server.has_key("acceptTextures", nbt::tag_type::Byte)) {
-            bool value = server["acceptTextures"].as<nbt::tag_byte>().get();
-            if (value) {
-                m_acceptsTextures = AcceptsTextures::ALWAYS;
-            } else {
-                m_acceptsTextures = AcceptsTextures::NEVER;
-            }
-        }
-    }
-
-    void serialize(nbt::tag_compound& server)
-    {
-        server.insert("name", m_name.trimmed().toUtf8().toStdString());
-        server.insert("ip", m_address.trimmed().toUtf8().toStdString());
-        if (m_icon.size()) {
-            server.insert("icon", m_icon.toBase64().toStdString());
-        }
-        if (m_acceptsTextures != AcceptsTextures::ASK) {
-            server.insert("acceptTextures", nbt::tag_byte(m_acceptsTextures == AcceptsTextures::ALWAYS));
-        }
-    }
-
-    // Data - persistent and user changeable
-    QString m_name;
-    QString m_address;
-    AcceptsTextures m_acceptsTextures = AcceptsTextures::ASK;
-
-    // Data - persistent and automatically updated
-    QByteArray m_icon;
-
-    // Data - temporary
-    std::optional<ServerStatus> m_status;  // nullopt if not queried (yet)
-    QString m_pingError;                   // why the server couldn't be queried, empty if it could
-
-   private:
-    /// Like the game, reads a missing entry or one that isn't a string as an empty string rather than failing over it.
-    static std::string readString(const nbt::tag_compound& server, const std::string& key)
-    {
-        if (!server.has_key(key, nbt::tag_type::String)) {
-            return {};
-        }
-        return server.at(key).as<nbt::tag_string>().get();
-    }
-};
 
 static std::unique_ptr<nbt::tag_compound> parseServersDat(const QString& filename)
 {
