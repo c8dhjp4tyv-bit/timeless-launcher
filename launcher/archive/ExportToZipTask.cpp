@@ -27,6 +27,11 @@ ExportToZipTask::~ExportToZipTask()
     // The worker is on the thread pool and uses the members of this task: it has to be done with them before they go
     m_abortRequested = true;
     m_buildZipFuture.waitForFinished();
+    if (m_interrupted) {
+        // an archive that was left half written is not an export
+        m_output.close();
+        FS::deletePath(m_outputPath);
+    }
 }
 
 void ExportToZipTask::executeTask()
@@ -49,6 +54,7 @@ auto ExportToZipTask::exportZip() -> ZipResult
 
     for (auto fileName : m_extraFiles.keys()) {
         if (m_abortRequested) {
+            m_interrupted = true;
             return ZipResult();
         }
         if (!m_output.addFile(fileName, m_extraFiles[fileName])) {
@@ -58,6 +64,7 @@ auto ExportToZipTask::exportZip() -> ZipResult
 
     for (const QFileInfo& file : m_files) {
         if (m_abortRequested) {
+            m_interrupted = true;
             return ZipResult();
         }
 

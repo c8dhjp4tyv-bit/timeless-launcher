@@ -26,6 +26,7 @@
 #include <QtEndian>
 
 #include <MMCZip.h>
+#include <archive/ArchiveReader.h>
 #include <archive/ArchiveWriter.h>
 #include <archive/ExportToZipTask.h>
 #include <archive/ExtractZipTask.h>
@@ -230,6 +231,14 @@ class ExtractZipTest : public QObject {
             QThread::usleep(3000);
             delete task;
             QCoreApplication::processEvents();
+
+            // an export that was cut short leaves no archive that looks like an export
+            const auto output = temp.filePath(QString("out%1.zip").arg(round));
+            if (QFileInfo::exists(output)) {
+                MMCZip::ArchiveReader reader(output);
+                QVERIFY(reader.collectFiles());
+                QCOMPARE(reader.getFiles().size(), files.size());
+            }
         }
         QThreadPool::globalInstance()->waitForDone();
     }

@@ -73,5 +73,7 @@ class ExportToZipTask : public Task {
     // What the worker checks to stop early. It can't ask m_buildZipFuture: that is only assigned once QtConcurrent::run has
     // returned, so the worker may get to it first, and until then it reads as canceled.
     std::atomic_bool m_abortRequested{ false };
+    // set by the worker when it stopped because of that, with the archive not finished
+    std::atomic_bool m_interrupted{ false };
 };
 }  // namespace MMCZip
