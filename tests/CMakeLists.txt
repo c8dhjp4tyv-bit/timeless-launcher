@@ -168,3 +168,6 @@ ecm_add_test(SearchUrl_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJ
 
 ecm_add_test(TechnicSearch_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME TechnicSearch)
+
+ecm_add_test(InstanceCopyTask_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME InstanceCopyTask)
