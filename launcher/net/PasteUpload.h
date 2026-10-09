@@ -38,6 +38,7 @@
 #include "EnumWrapper.h"
 #include "net/Request.h"
 
+#include <QByteArray>
 #include <QString>
 
 #include <array>
@@ -45,6 +46,10 @@
 #include <utility>
 
 namespace PasteUpload {
+
+/// The body of the form that mclo.gs takes a log in. The text is percent-encoded all the way: a form reads a plus sign as a space,
+/// and QUrlQuery leaves one as it is, which turned "-XX:+UseG1GC" into "-XX: UseG1GC" in every log that was uploaded.
+QByteArray mclogsFormBody(const QString& log);
 
 enum class TypeValue : std::uint8_t {
     // 0x0.st

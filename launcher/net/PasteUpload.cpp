@@ -44,7 +44,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
-#include <QUrlQuery>
+#include <QUrl>
 #include "logs/AnonymizeLog.h"
 #include "net/RPCSink.h"
 #include "net/RawHeaderProxy.h"
@@ -64,6 +64,11 @@ const std::array<PasteTypeInfo, 4> g_PasteTypes = {
       { .name = "mclo.gs", .defaultBase = "https://api.mclo.gs", .endpointPath = "/1/log" } }
 };
 }  // namespace
+
+QByteArray mclogsFormBody(const QString& log)
+{
+    return "content=" + QUrl::toPercentEncoding(log);
+}
 
 QString Type::defaultBase() const
 {
@@ -111,9 +116,7 @@ std::pair<Net::Request::Ptr, QString*> Type::make(QString log, QString baseUrl) 
             break;
         }
         case PasteUpload::Type::Mclogs: {
-            QUrlQuery postDataQuery;
-            postDataQuery.addQueryItem("content", log);
-            postData = postDataQuery.toString().toUtf8();
+            postData = mclogsFormBody(log);
             break;
         }
         case PasteUpload::Type::PasteGG: {
