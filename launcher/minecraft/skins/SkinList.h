@@ -52,6 +52,9 @@ class SkinList : public QAbstractListModel {
     /// file system won't take, and it is never empty (it is "skin" if nothing is left of it).
     static QString safeFileName(const QString& text);
 
+    /// Puts the contents of a file where another one is, which is left as it was if that fails
+    static bool replaceFile(const QString& from, const QString& to);
+
     const SkinModel* skin(const QString& key) const;
     SkinModel* skin(const QString& key);
 

@@ -499,7 +499,7 @@ void SkinManageDialog::on_userBtn_clicked()
     // Where it is downloaded to, and not in the folder of skins, so that a download that fails leaves the skin of this name that is there
     // already as it is
     const auto path = tempDir.filePath("skin.png");
-    const auto target = FS::PathCombine(m_list.getDir(), user + ".png");
+    const auto target = FS::PathCombine(m_list.getDir(), SkinList::safeFileName(user + ".png"));
 
     NetJob::Ptr job{ new NetJob(tr("Download user skin"), APPLICATION->network(), 1) };
     job->setAskRetry(false);
@@ -574,7 +574,7 @@ void SkinManageDialog::on_userBtn_clicked()
     ProgressDialog dlg(this);
     dlg.execWithTask(job.get());
 
-    const bool saved = SkinModel(path).isValid() && (!QFile::exists(target) || QFile::remove(target)) && QFile::copy(path, target);
+    const bool saved = SkinModel(path).isValid() && SkinList::replaceFile(path, target);
     if (!saved) {
         if (failReason.isEmpty()) {
             failReason = tr("the skin is invalid");

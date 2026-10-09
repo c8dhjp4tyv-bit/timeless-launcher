@@ -18,8 +18,11 @@
 
 #include "SkinList.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QMimeData>
+#include <QRegularExpression>
+#include <QSaveFile>
 
 #include "FileSystem.h"
 #include "Json.h"
@@ -307,7 +310,35 @@ QString SkinList::safeFileName(const QString& text)
         --end;
     }
     name = name.mid(start, end - start);
-    return name.isEmpty() ? QStringLiteral("skin") : name;
+    if (name.isEmpty()) {
+        return QStringLiteral("skin");
+    }
+    // Windows keeps these for devices, also with an extension: there is no file called "CON.png"
+    static const QRegularExpression s_deviceName(R"(^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$)",
+                                                 QRegularExpression::CaseInsensitiveOption);
+    if (s_deviceName.match(name).hasMatch()) {
+        name.prepend('_');
+    }
+    return name;
+}
+
+bool SkinList::replaceFile(const QString& from, const QString& to)
+{
+    // The file that is there stays as it is until the new one is written in full
+    QFile source(from);
+    if (!source.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    QSaveFile target(to);
+    if (!target.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    const auto data = source.readAll();
+    if (target.write(data) != data.size()) {
+        target.cancelWriting();
+        return false;
+    }
+    return target.commit();
 }
 
 QString SkinList::installSkin(const QString& file, const QString& name)
