@@ -162,3 +162,6 @@ ecm_add_test(SkinList_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJO
 
 ecm_add_test(PasteUpload_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME PasteUpload)
+
+ecm_add_test(SearchUrl_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME SearchUrl)

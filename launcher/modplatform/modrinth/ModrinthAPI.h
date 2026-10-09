@@ -13,6 +13,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUrl>
 #include <utility>
 
 class ModrinthAPI final : public ResourceAPI {
@@ -161,7 +162,8 @@ class ModrinthAPI final : public ResourceAPI {
         getArguments.append(QString("offset=%1").arg(args.offset));
         getArguments.append(QString("limit=25"));
         if (args.search.has_value()) {
-            getArguments.append(QString("query=%1").arg(args.search.value()));
+            // What is typed goes in as it is: an "&" would start another argument, a "#" would end the address, and a "+" is a space
+            getArguments.append(QString("query=%1").arg(QString::fromLatin1(QUrl::toPercentEncoding(args.search.value()))));
         }
         if (args.sorting.has_value()) {
             getArguments.append(QString("index=%1").arg(args.sorting.value().name));
