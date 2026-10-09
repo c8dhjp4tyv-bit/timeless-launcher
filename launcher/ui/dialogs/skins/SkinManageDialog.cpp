@@ -31,6 +31,8 @@
 #include <QMenu>
 #include <QMimeDatabase>
 #include <QPainter>
+#include <QRegularExpression>
+#include <QTemporaryDir>
 #include <QUrl>
 
 #include "Application.h"
@@ -414,27 +416,31 @@ void SkinManageDialog::on_urlBtn_clicked()
         return;
     }
 
+    // The skin is downloaded on its own and only goes into the folder of skins once it is known to be one: the end of the address could
+    // be the name of a skin that is there already, which a download that fails would otherwise take with it, or not be a name at all.
+    const QTemporaryDir tempDir;
+    if (!tempDir.isValid()) {
+        CustomMessageBox::selectable(this, tr("Unable to download the skin"), tr("No folder to download it to was available."),
+                                     QMessageBox::Critical)
+            ->show();
+        return;
+    }
+    const auto path = tempDir.filePath("skin.png");
+
     NetJob::Ptr job{ new NetJob(tr("Download skin"), APPLICATION->network()) };
     job->setAskRetry(false);
 
-    auto path = FS::PathCombine(m_list.getDir(), url.fileName());
     job->addNetAction(Net::Request::makeFile(url, path));
     ProgressDialog dlg(this);
     dlg.execWithTask(job.get());
-    SkinModel s(path);
-    if (!s.isValid()) {
-        CustomMessageBox::selectable(this, tr("URL is not a valid skin"),
-                                     QFileInfo::exists(path) ? tr("Skin images must be 64x64 or 64x32 pixel PNG files.")
-                                                             : tr("Unable to download the skin: '%1'.").arg(m_ui->urlLine->text()),
-                                     QMessageBox::Critical)
-            ->show();
-        QFile::remove(path);
+
+    const auto error = QFileInfo::exists(path) ? m_list.installSkin(path, SkinList::safeFileName(url.fileName()))
+                                               : tr("Unable to download the skin: '%1'.").arg(m_ui->urlLine->text());
+    if (!error.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("URL is not a valid skin"), error, QMessageBox::Critical)->show();
         return;
     }
     m_ui->urlLine->setText("");
-    if (QFileInfo(path).suffix().isEmpty()) {
-        QFile::rename(path, path + ".png");
-    }
 }
 
 namespace {
@@ -472,8 +478,28 @@ void SkinManageDialog::on_userBtn_clicked()
     if (user.isEmpty()) {
         return;
     }
+    // A name is made of letters, digits and underscores, and is the name of a file as well: nothing else gets as far as a request or a path
+    static const QRegularExpression s_userName("^[A-Za-z0-9_]{1,16}$");
+    if (!s_userName.match(user).hasMatch()) {
+        CustomMessageBox::selectable(
+            this, tr("Username not found"),
+            tr("Unable to find the skin for '%1'\n because: %2.").arg(user, tr("it is not a name that a player can have")),
+            QMessageBox::Critical)
+            ->show();
+        return;
+    }
+    const QTemporaryDir tempDir;
+    if (!tempDir.isValid()) {
+        CustomMessageBox::selectable(this, tr("Unable to download the skin"), tr("No folder to download it to was available."),
+                                     QMessageBox::Critical)
+            ->show();
+        return;
+    }
     MinecraftProfile mcProfile;
-    auto path = FS::PathCombine(m_list.getDir(), user + ".png");
+    // Where it is downloaded to, and not in the folder of skins, so that a download that fails leaves the skin of this name that is there
+    // already as it is
+    const auto path = tempDir.filePath("skin.png");
+    const auto target = FS::PathCombine(m_list.getDir(), user + ".png");
 
     NetJob::Ptr job{ new NetJob(tr("Download user skin"), APPLICATION->network(), 1) };
     job->setAskRetry(false);
@@ -548,17 +574,17 @@ void SkinManageDialog::on_userBtn_clicked()
     ProgressDialog dlg(this);
     dlg.execWithTask(job.get());
 
-    SkinModel s(path);
-    if (!s.isValid()) {
+    const bool saved = SkinModel(path).isValid() && (!QFile::exists(target) || QFile::remove(target)) && QFile::copy(path, target);
+    if (!saved) {
         if (failReason.isEmpty()) {
             failReason = tr("the skin is invalid");
         }
         CustomMessageBox::selectable(this, tr("Username not found"),
                                      tr("Unable to find the skin for '%1'\n because: %2.").arg(user, failReason), QMessageBox::Critical)
             ->show();
-        QFile::remove(path);
         return;
     }
+    SkinModel s(target);
     m_ui->urlLine->setText("");
     s.setModel(mcProfile.skin.variant.toUpper() == "SLIM" ? SkinModel::SLIM : SkinModel::CLASSIC);
     s.setURL(mcProfile.skin.url);

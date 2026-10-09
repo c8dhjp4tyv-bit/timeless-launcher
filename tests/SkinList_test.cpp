@@ -112,6 +112,57 @@ class SkinListTest : public QObject {
         QVERIFY(!list.installSkin(path).isEmpty());
         QCOMPARE(imagesIn(skins.path()).size(), 0);
     }
+
+    void safeFileName_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("a name") << "steve.png" << "steve.png";
+        QTest::newRow("a name with spaces inside") << "my skin.png" << "my skin.png";
+        QTest::newRow("non-ASCII letters") << "çağan ığdır.png" << "çağan ığdır.png";
+        QTest::newRow("nothing") << "" << "skin";
+        QTest::newRow("only dots") << ".." << "skin";
+        QTest::newRow("only spaces") << "   " << "skin";
+        QTest::newRow("a path up") << "../../evil.png" << "-..-evil.png";
+        QTest::newRow("a path with backslashes") << "..\\..\\evil.png" << "-..-evil.png";
+        QTest::newRow("an absolute path") << "/etc/passwd" << "-etc-passwd";
+        QTest::newRow("a drive") << "C:\\Windows\\x.png" << "C--Windows-x.png";
+        QTest::newRow("what Windows refuses") << "a*b?c\"d<e>f|g.png" << "a-b-c-d-e-f-g.png";
+        QTest::newRow("a control character") << "a\tb\nc.png" << "a-b-c.png";
+        QTest::newRow("dots and spaces at the ends") << " .skin.png. " << "skin.png";
+    }
+
+    void safeFileName()
+    {
+        QFETCH(const QString, text);
+        QFETCH(const QString, expected);
+
+        const auto name = SkinList::safeFileName(text);
+        QCOMPARE(name, expected);
+        // whatever it is, it is a name and not a path
+        QCOMPARE(QFileInfo(name).fileName(), name);
+        QVERIFY(name != "." && name != "..");
+    }
+
+    void aNameWithAPathStaysInTheFolder()
+    {
+        QTemporaryDir from;
+        QTemporaryDir skins;
+        QVERIFY(from.isValid() && skins.isValid());
+        QDir(skins.path()).mkdir("inner");
+
+        QImage image(64, 64, QImage::Format_ARGB32);
+        image.fill(Qt::darkGreen);
+        const auto path = from.filePath("skin.png");
+        QVERIFY(image.save(path, "PNG"));
+
+        OpenList list(nullptr, QDir(skins.path()).filePath("inner"), MinecraftAccount::createOffline("Steve"));
+        QVERIFY(list.installSkin(path, "../escaped.png").isEmpty());
+
+        QCOMPARE(imagesIn(skins.path()).size(), 0);
+        QCOMPARE(imagesIn(QDir(skins.path()).filePath("inner")).size(), 1);
+    }
 };
 
 QTEST_GUILESS_MAIN(SkinListTest)

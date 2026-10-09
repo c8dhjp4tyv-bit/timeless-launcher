@@ -288,6 +288,28 @@ QString getUniqueFile(const QString& root, const QString& file)
 
     return result;
 }
+QString SkinList::safeFileName(const QString& text)
+{
+    QString name = text;
+    for (auto& letter : name) {
+        // the separators of a path, what Windows refuses in a name, and the control characters
+        if (QStringLiteral("\\/:*?\"<>|").contains(letter) || letter.unicode() < 0x20) {
+            letter = '-';
+        }
+    }
+    // no dots or spaces at either end: ".." is not a name, and Windows drops them
+    qsizetype start = 0;
+    qsizetype end = name.size();
+    while (start < end && (name.at(start) == '.' || name.at(start).isSpace())) {
+        ++start;
+    }
+    while (end > start && (name.at(end - 1) == '.' || name.at(end - 1).isSpace())) {
+        --end;
+    }
+    name = name.mid(start, end - start);
+    return name.isEmpty() ? QStringLiteral("skin") : name;
+}
+
 QString SkinList::installSkin(const QString& file, const QString& name)
 {
     if (file.isEmpty())
@@ -302,7 +324,7 @@ QString SkinList::installSkin(const QString& file, const QString& name)
     if (fileinfo.suffix().compare("png", Qt::CaseInsensitive) != 0 || !SkinModel(fileinfo.absoluteFilePath()).isValid())
         return tr("Skin images must be 64x64 or 64x32 pixel PNG files.");
 
-    auto targetName = name.isEmpty() ? fileinfo.fileName() : name;
+    auto targetName = name.isEmpty() ? fileinfo.fileName() : safeFileName(name);
     if (QFileInfo(targetName).suffix() != "png") {
         // the list only knows the files that end in ".png", and not "SKIN.PNG"
         targetName = QFileInfo(targetName).completeBaseName() + ".png";
