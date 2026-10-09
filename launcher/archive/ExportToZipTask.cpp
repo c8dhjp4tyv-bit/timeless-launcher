@@ -22,6 +22,13 @@
 #include "FileSystem.h"
 
 namespace MMCZip {
+ExportToZipTask::~ExportToZipTask()
+{
+    // The worker is on the thread pool and uses the members of this task: it has to be done with them before they go
+    m_abortRequested = true;
+    m_buildZipFuture.waitForFinished();
+}
+
 void ExportToZipTask::executeTask()
 {
     setStatus("Adding files...");

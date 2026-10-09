@@ -43,7 +43,7 @@ class ExportToZipTask : public Task {
     ExportToZipTask(QString outputPath, QString dir, QFileInfoList files, QString destinationPrefix = "", bool followSymlinks = false)
         : ExportToZipTask(outputPath, QDir(dir), files, destinationPrefix, followSymlinks) {};
 
-    virtual ~ExportToZipTask() = default;
+    ~ExportToZipTask() override;
 
     QString outputPath() const { return m_outputPath; }
     void setExcludeFiles(QStringList excludeFiles) { m_excludeFiles = excludeFiles; }

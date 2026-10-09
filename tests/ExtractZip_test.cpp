@@ -15,15 +15,19 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <QCoreApplication>
 #include <QDirIterator>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThread>
+#include <QThreadPool>
 #include <QtEndian>
 
 #include <MMCZip.h>
 #include <archive/ArchiveWriter.h>
+#include <archive/ExportToZipTask.h>
 #include <archive/ExtractZipTask.h>
 
 class ExtractZipTest : public QObject {
@@ -65,6 +69,17 @@ class ExtractZipTest : public QObject {
         QVERIFY(file.seek(dataStart));
         QCOMPARE(file.write("\xFF", 1), qint64(1));
         file.close();
+    }
+
+    /// A zip with enough files that extracting it takes a while
+    static void writeBigZip(const QString& zipPath, int files)
+    {
+        MMCZip::ArchiveWriter zip(zipPath);
+        QVERIFY(zip.open());
+        for (int i = 0; i < files; ++i) {
+            QVERIFY(zip.addFile(QString("folder%1/file%2.txt").arg(i % 30).arg(i), QByteArray(2000, 'x')));
+        }
+        QVERIFY(zip.close());
     }
 
    private slots:
@@ -173,6 +188,50 @@ class ExtractZipTest : public QObject {
         const auto target = temp.filePath("extracted");
         QVERIFY(!MMCZip::extractDir(zipPath, target).has_value());
         QCOMPARE(filesIn(target), QStringList());
+    }
+
+    void destroyedWhileExtracting()
+    {
+        // The work is on the thread pool and uses the task: a task that goes while it is at it (as when the launcher is closed during an
+        // import) has to wait for it, or the members it uses are gone.
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto zipPath = temp.filePath("big.zip");
+        writeBigZip(zipPath, 3000);
+
+        for (int round = 0; round < 5; ++round) {
+            const auto target = temp.filePath(QString("extracted%1").arg(round));
+            auto* task = new MMCZip::ExtractZipTask(zipPath, QDir(target));
+            task->start();
+            QThread::usleep(3000);
+            delete task;
+            QCoreApplication::processEvents();
+        }
+        QThreadPool::globalInstance()->waitForDone();
+    }
+
+    void destroyedWhileExporting()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto source = temp.filePath("source");
+        QVERIFY(QDir().mkpath(source));
+        QFileInfoList files;
+        for (int i = 0; i < 3000; ++i) {
+            QFile file(QString("%1/file%2.txt").arg(source).arg(i));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(QByteArray(2000, 'x'));
+            files << QFileInfo(file.fileName());
+        }
+
+        for (int round = 0; round < 5; ++round) {
+            auto* task = new MMCZip::ExportToZipTask(temp.filePath(QString("out%1.zip").arg(round)), source, files);
+            task->start();
+            QThread::usleep(3000);
+            delete task;
+            QCoreApplication::processEvents();
+        }
+        QThreadPool::globalInstance()->waitForDone();
     }
 };
 
