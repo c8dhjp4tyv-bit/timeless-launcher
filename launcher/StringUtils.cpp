@@ -188,7 +188,10 @@ QPair<QString, QString> StringUtils::splitFirst(const QString& s, const QString&
     QString left, right;
     auto index = s.indexOf(sep, 0, cs);
     left = s.mid(0, index);
-    right = s.mid(index + sep.length());
+    // without the separator everything is the left side; mid() of -1 plus its length would hand back the text from the second letter on
+    if (index >= 0) {
+        right = s.mid(index + sep.length());
+    }
     return qMakePair(left, right);
 }
 
