@@ -53,7 +53,8 @@ std::unique_ptr<MMCZip::ExportToZipTask> createTask(const QFileInfo& world, cons
     const auto name = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss") + '_' + world.fileName();
     auto zipPath = FS::PathCombine(backupDir, name + ".zip");
     for (int copy = 1; QFileInfo::exists(zipPath); copy++) {
-        zipPath = FS::PathCombine(backupDir, QString("%1 (%2).zip").arg(name).arg(copy));
+        // the name goes in with the number in one go: a name with "%2" in it would take the number in its place otherwise
+        zipPath = FS::PathCombine(backupDir, QString("%1 (%2).zip").arg(name, QString::number(copy)));
     }
 
     auto task = std::make_unique<MMCZip::ExportToZipTask>(zipPath, world.absoluteFilePath(), files, world.fileName() + '/');

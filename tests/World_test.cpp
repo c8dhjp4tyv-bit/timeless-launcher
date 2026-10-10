@@ -283,6 +283,28 @@ class WorldTest : public QObject {
         QThreadPool::globalInstance()->waitForDone();
     }
 
+    void backupOfAWorldWithAPlaceholderInItsName()
+    {
+        // a second backup in the same second gets " (1)" after the name, and the name keeps what is in it
+        const QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+
+        const auto saves = temp.filePath("saves");
+        const QFileInfo world(FS::PathCombine(saves, "50%2 off %1"));
+        FS::write(FS::PathCombine(world.absoluteFilePath(), "level.dat"), levelDat("Sale"));
+        const auto backups = WorldBackups::backupDir(saves);
+
+        auto first = WorldBackups::createTask(world, backups);
+        QVERIFY(first);
+        QVERIFY(run(*first));
+        QVERIFY(QFileInfo::exists(first->outputPath()));
+
+        auto second = WorldBackups::createTask(world, backups);
+        QVERIFY(second);
+        const auto firstName = QFileInfo(first->outputPath()).completeBaseName();
+        QCOMPARE(QFileInfo(second->outputPath()).fileName(), firstName + " (1).zip");
+    }
+
     void copyToAnotherInstance()
     {
         const QTemporaryDir temp;

@@ -71,12 +71,8 @@ auto FileSink::write(const QByteArray& data) -> Result
 {
     writeAllValidators(data);
     if (m_outputFile->write(data) != data.size()) {
-        QString error = QString("Failed writing into %1: %2").arg(m_filename);
-        if (m_outputFile->error() == QFileDevice::NoError) {
-            error = error.arg("Validators failed");
-        } else {
-            error = error.arg(m_outputFile->errorString());
-        }
+        const auto reason = m_outputFile->error() == QFileDevice::NoError ? QString("Validators failed") : m_outputFile->errorString();
+        const auto error = QString("Failed writing into %1: %2").arg(m_filename, reason);
         qCCritical(taskNetLogC) << error;
         m_outputFile->cancelWriting();
         m_outputFile.reset();

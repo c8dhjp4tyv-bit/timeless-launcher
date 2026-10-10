@@ -197,6 +197,28 @@ class SkinListTest : public QObject {
         QCOMPARE(imagesIn(skins.path()).size(), 0);
         QCOMPARE(imagesIn(QDir(skins.path()).filePath("inner")).size(), 1);
     }
+
+    void aSecondSkinOfTheSameNameKeepsTheName()
+    {
+        // the number goes after the name, whatever is in the name: "%2" was taken for the place of the number
+        QTemporaryDir from;
+        QTemporaryDir skins;
+        QVERIFY(from.isValid() && skins.isValid());
+
+        QImage image(64, 64, QImage::Format_ARGB32);
+        image.fill(Qt::darkGreen);
+        const auto path = from.filePath("skin.png");
+        QVERIFY(image.save(path, "PNG"));
+
+        OpenList list(nullptr, skins.path(), MinecraftAccount::createOffline("Steve"));
+        for (int i = 0; i < 3; ++i) {
+            QVERIFY(list.installSkin(path, "a%2b%1c.png").isEmpty());
+        }
+
+        auto images = imagesIn(skins.path());
+        images.sort();
+        QCOMPARE(images, (QStringList{ "a%2b%1c.png", "a%2b%1c1.png", "a%2b%1c2.png" }));
+    }
 };
 
 QTEST_GUILESS_MAIN(SkinListTest)

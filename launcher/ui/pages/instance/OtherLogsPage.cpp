@@ -257,8 +257,10 @@ void OtherLogsPage::reload()
     if (!file.open(QFile::ReadOnly)) {
         setControlsEnabled(false);
         ui->btnReload->setEnabled(true);  // allow reload
+        // the message says which file it was, so it has to be written before the name is forgotten
+        const auto failedFile = m_currentFile;
         m_currentFile = QString();
-        QMessageBox::critical(this, tr("Error"), tr("Unable to open %1 for reading: %2").arg(m_currentFile, file.errorString()));
+        QMessageBox::critical(this, tr("Error"), tr("Unable to open %1 for reading: %2").arg(failedFile, file.errorString()));
     } else {
         auto setPlainText = [this](const QString& text) {
             QTextDocument* doc = ui->text->document();

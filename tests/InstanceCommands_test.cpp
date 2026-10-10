@@ -46,7 +46,8 @@ class InstanceCommandsTest : public QObject {
         QTest::newRow("quoted spaces") << "echo \"  a  \"" << "echo \"  a  \"";
         QTest::newRow("one space") << " " << "";
         QTest::newRow("tabs and spaces") << " \t  \t" << "";
-        QTest::newRow("a new line") << "\n" << "";
+        QTest::newRow("a new line") << "\n"
+                                    << "";
     }
 
     void commandsAreAsTyped()
