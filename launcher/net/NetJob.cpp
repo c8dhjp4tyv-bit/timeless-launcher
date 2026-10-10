@@ -140,6 +140,12 @@ auto NetJob::getFailedActions() -> QList<Net::Request*>
     return failed;
 }
 
+auto NetJob::firstFailedStatusCode() -> int
+{
+    const auto failed = getFailedActions();
+    return (failed.isEmpty() || failed.first() == nullptr) ? -1 : failed.first()->replyStatusCode();
+}
+
 auto NetJob::getFailedFiles() -> QList<QString>
 {
     QList<QString> failed;

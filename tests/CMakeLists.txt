@@ -189,3 +189,6 @@ ecm_add_test(ProviderFileName_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERS
 
 ecm_add_test(JavaChecker_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME JavaChecker)
+
+ecm_add_test(NetJob_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME NetJob)
