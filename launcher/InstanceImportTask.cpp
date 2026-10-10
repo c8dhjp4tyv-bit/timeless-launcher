@@ -276,8 +276,7 @@ bool installIcon(const QString& root, const QString& instIconKey)
         if (iconList->iconFileExists(instIconKey)) {
             iconList->deleteIcon(instIconKey);
         }
-        iconList->installIcon(importIconPath, instIconKey + "." + QFileInfo(importIconPath).suffix());
-        return true;
+        return iconList->installIcon(importIconPath, instIconKey + "." + QFileInfo(importIconPath).suffix());
     }
     return false;
 }
@@ -312,7 +311,7 @@ void InstanceImportTask::processFlame()
     instCreationTask->setOriginalName(originalName(), version());
     // if the icon was specified by user, use that. otherwise pull icon from the pack
     if (m_instIcon == "default") {
-        auto iconKey = QString("Flame_%1_Icon").arg(name());
+        auto iconKey = QString("Flame_%1_Icon").arg(FS::RemoveInvalidFilenameChars(name()));
 
         if (installIcon(m_stagingPath, iconKey)) {
             m_instIcon = iconKey;
@@ -418,7 +417,7 @@ void InstanceImportTask::processModrinth()
     instCreationTask->setOriginalName(originalName(), version());
     // if the icon was specified by user, use that. otherwise pull icon from the pack
     if (m_instIcon == "default") {
-        auto iconKey = QString("Modrinth_%1_Icon").arg(name());
+        auto iconKey = QString("Modrinth_%1_Icon").arg(FS::RemoveInvalidFilenameChars(name()));
 
         if (installIcon(m_stagingPath, iconKey)) {
             m_instIcon = iconKey;

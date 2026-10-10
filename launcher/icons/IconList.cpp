@@ -331,17 +331,19 @@ void IconList::installIcons(const QStringList& iconFiles)
         installIcon(file, {});
 }
 
-void IconList::installIcon(const QString& file, const QString& name)
+bool IconList::installIcon(const QString& file, const QString& name)
 {
     QFileInfo fileinfo(file);
     if (!fileinfo.isReadable() || !fileinfo.isFile())
-        return;
+        return false;
 
     if (!IconUtils::isIconSuffix(fileinfo.suffix()))
-        return;
+        return false;
 
-    QString target = FS::PathCombine(getDirectory(), name.isEmpty() ? fileinfo.fileName() : name);
-    QFile::copy(file, target);
+    // The name is made of the name of a pack, or of whatever the caller has. A file name can't have a separator or a colon in it:
+    // with one the copy ended up in a folder that isn't there, or in a stream of another file on Windows, and nothing said so.
+    const auto fileName = name.isEmpty() ? fileinfo.fileName() : FS::RemoveInvalidFilenameChars(name);
+    return QFile::copy(file, FS::PathCombine(getDirectory(), fileName));
 }
 
 bool IconList::iconFileExists(const QString& key) const

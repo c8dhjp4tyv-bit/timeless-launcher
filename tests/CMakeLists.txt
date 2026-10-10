@@ -195,3 +195,6 @@ ecm_add_test(NetJob_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}
 
 ecm_add_test(POTranslator_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME POTranslator)
+
+ecm_add_test(IconList_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME IconList)

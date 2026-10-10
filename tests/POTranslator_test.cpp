@@ -115,7 +115,8 @@ class POTranslatorTest : public QObject {
     void aPluralWithOneForm()
     {
         // languages with one form write just one
-        const Po po(g_header + "msgid \"%n mod\"\nmsgid_plural \"%n mods\"\nmsgstr[0] \"%n modu\"\n\nmsgid \"Hello\"\nmsgstr \"Merhaba\"\n");
+        const Po po(g_header +
+                    "msgid \"%n mod\"\nmsgid_plural \"%n mods\"\nmsgstr[0] \"%n modu\"\n\nmsgid \"Hello\"\nmsgstr \"Merhaba\"\n");
         QVERIFY(!po.translator->isEmpty());
         QCOMPARE(po("%n mod", 1), QString("%n modu"));
         QCOMPARE(po("%n mod", 7), QString("%n modu"));
