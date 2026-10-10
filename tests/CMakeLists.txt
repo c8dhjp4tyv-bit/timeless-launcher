@@ -174,3 +174,6 @@ ecm_add_test(InstanceCopyTask_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERS
 
 ecm_add_test(ServerEntry_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ServerEntry)
+
+ecm_add_test(InstanceCommands_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME InstanceCommands)
