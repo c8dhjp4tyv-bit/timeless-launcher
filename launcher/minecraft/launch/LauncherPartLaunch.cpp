@@ -137,9 +137,10 @@ void LauncherPartLaunch::executeTask()
 
     qDebug() << args.join(' ');
 
-    QString wrapperCommandStr = instance->getWrapperCommand().trimmed();
-    if (!wrapperCommandStr.isEmpty()) {
-        auto wrapperArgs = m_parent->substituteVariables(wrapperCommandStr);
+    QString wrapperCommandStr = instance->getWrapperCommand();
+    // what is typed can split into no word at all (two quotes), and there is no wrapper then
+    auto wrapperArgs = wrapperCommandStr.isEmpty() ? QStringList() : m_parent->substituteVariables(wrapperCommandStr);
+    if (!wrapperArgs.isEmpty()) {
         auto wrapperCommand = wrapperArgs.takeFirst();
         auto realWrapperCommand = QStandardPaths::findExecutable(wrapperCommand);
         if (realWrapperCommand.isEmpty()) {

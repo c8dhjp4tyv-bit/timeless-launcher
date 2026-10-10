@@ -173,6 +173,78 @@ class FileSystemTest : public QObject {
         QCOMPARE(FS::PathCombine(path1, path2, path3), result);
     }
 
+    void test_removeInvalidFilenameChars_data()
+    {
+        QTest::addColumn<QString>("name");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("a name") << "mod-1.0.jar" << "mod-1.0.jar";
+        QTest::newRow("separators") << "a/b\\c.jar" << "a-b-c.jar";
+        QTest::newRow("characters Windows refuses") << "a:b*c?.jar" << "a-b-c-.jar";
+        QTest::newRow("one dot") << "." << "-";
+        QTest::newRow("two dots") << ".." << "--";
+        QTest::newRow("dots in a name") << "..a" << "..a";
+        QTest::newRow("three dots") << "..." << "...";
+        QTest::newRow("dots around a separator") << "./." << ".-.";
+    }
+
+    void test_removeInvalidFilenameChars()
+    {
+        QFETCH(QString, name);
+        QFETCH(QString, expected);
+        QCOMPARE(FS::RemoveInvalidFilenameChars(name), expected);
+    }
+
+    void test_dirNameFromDots()
+    {
+        // an instance, or a world, called ".." gets a folder of its own and not the one above the instances
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        QCOMPARE(FS::DirNameFromString("..", temp.path()), QString("--"));
+        QCOMPARE(FS::DirNameFromString(".", temp.path()), QString("-"));
+    }
+
+    void test_isInside_data()
+    {
+        QTest::addColumn<QString>("path");
+        QTest::addColumn<QString>("folder");
+        QTest::addColumn<bool>("inside");
+
+        QTest::newRow("a file in it") << "/a/b/c.jar" << "/a/b" << true;
+        QTest::newRow("deeper") << "/a/b/c/d/e" << "/a/b" << true;
+        QTest::newRow("a trailing separator") << "/a/b/c.jar" << "/a/b/" << true;
+        QTest::newRow("segments that lead out and back") << "/a/x/../b/c" << "/a/b" << true;
+        QTest::newRow("repeated separators") << "/a//b///c" << "/a/b" << true;
+        QTest::newRow("the root") << "/a/b" << "/" << true;
+        // the folders that start with the same letters are not it: "/a/bc" is not "/a/b", and "java-17-jre" is not "java-17"
+        QTest::newRow("a sibling with the same start") << "/a/bc/d.jar" << "/a/b" << false;
+        QTest::newRow("a sibling that adds a suffix") << "/j/java-17-jre/bin/java" << "/j/java-17" << false;
+        QTest::newRow("the folder itself") << "/a/b" << "/a/b" << false;
+        QTest::newRow("the folder itself with a separator") << "/a/b/" << "/a/b" << false;
+        QTest::newRow("its parent") << "/a" << "/a/b" << false;
+        QTest::newRow("a segment that leads out") << "/a/b/../c" << "/a/b" << false;
+        QTest::newRow("somewhere else") << "/x/y" << "/a/b" << false;
+        // an empty folder is no folder: a path that is empty, as when a link is broken, is not in everything
+        QTest::newRow("empty folder") << "/a/b" << "" << false;
+        QTest::newRow("empty path") << "" << "/a/b" << false;
+    }
+
+    void test_isInside()
+    {
+        QFETCH(QString, path);
+        QFETCH(QString, folder);
+        QFETCH(bool, inside);
+        QCOMPARE(FS::isInside(path, folder), inside);
+    }
+
+    void test_isInside_relative()
+    {
+        // both are made absolute from where the program is
+        QVERIFY(FS::isInside("sub/file.txt", "sub"));
+        QVERIFY(FS::isInside(QDir::current().absoluteFilePath("sub/file.txt"), "sub"));
+        QVERIFY(!FS::isInside("sub2/file.txt", "sub"));
+    }
+
     void test_copy()
     {
         QString folder = QFINDTESTDATA("testdata/FileSystem/test_folder");

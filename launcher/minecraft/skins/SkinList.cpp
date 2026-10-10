@@ -285,7 +285,8 @@ QString getUniqueFile(const QString& root, const QString& file)
         if (++tries > 256)
             return {};
 
-        QString key = QString("%1%2.%3").arg(baseName).arg(tries).arg(extension);
+        // all three go in together: one by one, a "%2" in the name would take the number in its place
+        QString key = QString("%1%2.%3").arg(baseName, QString::number(tries), extension);
         result = FS::PathCombine(root, key);
     }
 

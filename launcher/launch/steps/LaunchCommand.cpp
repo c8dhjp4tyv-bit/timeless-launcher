@@ -52,9 +52,9 @@ void LaunchCommand::executeTask()
     auto args = m_parent->substituteVariables(m_command);
     emit logLine(tr("Running %1 command: %2").arg(m_phaseName, args.join(' ')), MessageLevel::Launcher);
     if (args.isEmpty()) {
-        auto error = tr("%1 command is empty, skipping.").arg(m_phaseName);
-        emit logLine(error, MessageLevel::Fatal);
-        emitFailed(error);
+        // nothing to run, which is no reason to stop the launch (the step says it is skipped)
+        emit logLine(tr("%1 command is empty, skipping.").arg(m_phaseName), MessageLevel::Warning);
+        emitSucceeded();
         return;
     }
     const QString program = args.takeFirst();

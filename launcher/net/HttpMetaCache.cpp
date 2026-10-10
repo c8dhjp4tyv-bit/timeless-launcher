@@ -41,6 +41,7 @@
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 
 #include <QDebug>
 
@@ -84,7 +85,11 @@ auto HttpMetaCache::getEntry(QString base, QString resource_path) -> MetaEntryPt
 
 auto HttpMetaCache::resolveEntry(QString base, QString resource_path, QString expected_etag) -> MetaEntryPtr
 {
+    // The path is made of what a server sent (the file name of a logo, the host and path of an address), and QUrl::path() keeps the
+    // ".." of ".../%2e%2e%2f%2e%2e%2fx" (and of "/../x"). Nothing that is stored for it may end up outside the folder of its base.
+    static const QRegularExpression s_parentSegment(R"((^|[/\\])\.\.(?=$|[/\\]))");
     resource_path = FS::RemoveInvalidPathChars(resource_path);
+    resource_path.replace(s_parentSegment, QStringLiteral("\\1-"));
     auto entry = getEntry(base, resource_path);
     // it's not present? generate a default stale entry
     if (!entry) {

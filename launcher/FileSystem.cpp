@@ -876,6 +876,23 @@ QString AbsolutePath(const QString& path)
     return QFileInfo(path).absolutePath();
 }
 
+bool isInside(const QString& path, const QString& folder)
+{
+    if (folder.isEmpty() || path.isEmpty()) {
+        return false;
+    }
+    const auto cleanFolder = QDir::cleanPath(QFileInfo(folder).absoluteFilePath());
+    const auto cleanPath = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+#if defined(Q_OS_WIN)
+    constexpr auto caseSensitivity = Qt::CaseInsensitive;
+#else
+    constexpr auto caseSensitivity = Qt::CaseSensitive;
+#endif
+    // a root ("/" or "C:/") already ends with the separator that the rest of the path has to start after
+    const auto prefix = cleanFolder.endsWith('/') ? cleanFolder : cleanFolder + '/';
+    return cleanPath.size() > prefix.size() && cleanPath.startsWith(prefix, caseSensitivity);
+}
+
 int pathDepth(const QString& path)
 {
     if (path.isEmpty())
@@ -974,7 +991,12 @@ QString removeChars(QString source, QChar replace, const QString& extraChars = "
 
 QString RemoveInvalidFilenameChars(QString string, QChar replaceWith)
 {
-    return removeChars(std::move(string), replaceWith, "\\/");
+    auto name = removeChars(std::move(string), replaceWith, "\\/");
+    // "." and ".." are the folder itself and the one above it, not names of files: a download "to" them is a download to a folder
+    if (name == "." || name == "..") {
+        name.fill(replaceWith);
+    }
+    return name;
 }
 
 QString RemoveInvalidPathChars(QString string, QChar replaceWith)

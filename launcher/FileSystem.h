@@ -334,6 +334,14 @@ QString PathCombine(const QString& path1, const QString& path2, const QString& p
 QString AbsolutePath(const QString& path);
 
 /**
+ * @brief whether path is somewhere below folder: "/a/b/c" is in "/a/b", and "/a/bc/d" is not, however much of its name they share.
+ *
+ * Neither has to exist. Both are made absolute and cleaned first, so "..", repeated and trailing separators don't matter. The folder
+ * itself is not below itself, and an empty folder contains nothing.
+ */
+bool isInside(const QString& path, const QString& folder);
+
+/**
  * @brief depth of path. "foo.txt" -> 0 , "bar/foo.txt" -> 1, /baz/bar/foo.txt -> 2, etc.
  *
  * @param path path to measure

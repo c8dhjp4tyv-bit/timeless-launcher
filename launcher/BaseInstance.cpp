@@ -135,24 +135,25 @@ BaseInstance::BaseInstance(SettingsObject* globalSettings, std::unique_ptr<Setti
     m_settings->registerSetting("Profiler", "");
 }
 
+// A command of nothing but spaces is no command: the settings keep what was typed, and the steps are made for the ones that aren't empty
 QString BaseInstance::getPreLaunchCommand()
 {
-    return settings()->get("PreLaunchCommand").toString();
+    return settings()->get("PreLaunchCommand").toString().trimmed();
 }
 
 QString BaseInstance::getPreLoadCommand()
 {
-    return settings()->get("PreLoadCommand").toString();
+    return settings()->get("PreLoadCommand").toString().trimmed();
 }
 
 QString BaseInstance::getWrapperCommand()
 {
-    return settings()->get("WrapperCommand").toString();
+    return settings()->get("WrapperCommand").toString().trimmed();
 }
 
 QString BaseInstance::getPostExitCommand()
 {
-    return settings()->get("PostExitCommand").toString();
+    return settings()->get("PostExitCommand").toString().trimmed();
 }
 
 bool BaseInstance::isManagedPack() const
