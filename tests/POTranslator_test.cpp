@@ -122,6 +122,73 @@ class POTranslatorTest : public QObject {
         QCOMPARE(po("%n mod", 7), QString("%n modu"));
         QCOMPARE(po("Hello"), QString("Merhaba"));
     }
+
+    void aPluralSourceOverSeveralLines()
+    {
+        // the source text of the plural is not part of the key of the entry, whatever the number of lines it is written in
+        const Po po(g_header +
+                    "msgid \"%n file\"\nmsgid_plural \"\"\n\"%n \"\n\"files\"\nmsgstr[0] \"%n dosya\"\nmsgstr[1] \"%n dosyalar\"\n");
+        QVERIFY(!po.translator->isEmpty());
+        QCOMPARE(po("%n file", 1), QString("%n dosya"));
+        QCOMPARE(po("%n file", 4), QString("%n dosyalar"));
+        QCOMPARE(po("%n file%n files"), QString());
+    }
+
+    void pluralRulesOfTheHeader_data()
+    {
+        QTest::addColumn<QByteArray>("rule");
+        QTest::addColumn<int>("count");
+        QTest::addColumn<QString>("expected");
+
+        const QByteArray french = "nplurals=2; plural=(n > 1);";
+        QTest::newRow("french 0") << french << 0 << "f0";
+        QTest::newRow("french 1") << french << 1 << "f0";
+        QTest::newRow("french 2") << french << 2 << "f1";
+
+        const QByteArray english = "nplurals=2; plural=(n != 1);";
+        QTest::newRow("english 0") << english << 0 << "f1";
+        QTest::newRow("english 1") << english << 1 << "f0";
+        QTest::newRow("english 5") << english << 5 << "f1";
+
+        // three forms, with the rules for the ends of the numbers
+        const QByteArray russian = "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);";
+        QTest::newRow("russian 1") << russian << 1 << "f0";
+        QTest::newRow("russian 21") << russian << 21 << "f0";
+        QTest::newRow("russian 2") << russian << 2 << "f1";
+        QTest::newRow("russian 22") << russian << 22 << "f1";
+        QTest::newRow("russian 5") << russian << 5 << "f2";
+        QTest::newRow("russian 11") << russian << 11 << "f2";
+        QTest::newRow("russian 12") << russian << 12 << "f2";
+        QTest::newRow("russian 0") << russian << 0 << "f2";
+        QTest::newRow("russian 111") << russian << 111 << "f2";
+
+        // one form for every count
+        const QByteArray japanese = "nplurals=1; plural=0;";
+        QTest::newRow("japanese 1") << japanese << 1 << "f0";
+        QTest::newRow("japanese 7") << japanese << 7 << "f0";
+
+        // a rule that can't be read is the rule of English and the languages like it
+        QTest::newRow("no operator") << QByteArray("nplurals=2; plural=(n ** 2);") << 1 << "f0";
+        QTest::newRow("no operator, 3") << QByteArray("nplurals=2; plural=(n ** 2);") << 3 << "f1";
+        QTest::newRow("unclosed") << QByteArray("nplurals=2; plural=(n > 1;") << 0 << "f1";
+        QTest::newRow("no rule") << QByteArray("nplurals=2;") << 2 << "f1";
+        // a rule that gives a form there isn't is no rule for that count
+        QTest::newRow("out of range") << QByteArray("nplurals=2; plural=n;") << 5 << "f1";
+        // a division by zero is zero, and is not a reason to stop
+        QTest::newRow("divided by zero") << QByteArray("nplurals=2; plural=(n / 0);") << 5 << "f0";
+    }
+
+    void pluralRulesOfTheHeader()
+    {
+        QFETCH(QByteArray, rule);
+        QFETCH(int, count);
+        QFETCH(QString, expected);
+
+        const Po po("msgid \"\"\nmsgstr \"\"\n\"Content-Type: text/plain; charset=UTF-8\\n\"\n\"Plural-Forms: " + rule +
+                    "\\n\"\n\nmsgid \"%n x\"\nmsgid_plural \"%n xs\"\nmsgstr[0] \"f0\"\nmsgstr[1] \"f1\"\nmsgstr[2] \"f2\"\n");
+        QVERIFY(!po.translator->isEmpty());
+        QCOMPARE(po("%n x", count), expected);
+    }
 };
 
 QTEST_GUILESS_MAIN(POTranslatorTest)
