@@ -222,7 +222,8 @@ ModPlatform::IndexedVersion Modrinth::loadIndexedPackVersion(QJsonObject& obj,
     if (parent.contains("url")) {
         file.downloadUrl = Json::requireString(parent, "url");
         file.fileName = Json::requireString(parent, "filename");
-        file.fileName = FS::RemoveInvalidPathChars(file.fileName);
+        // a file name, and not a path: a "/" in it would put the file in another folder, as "../" puts it outside of the instance
+        file.fileName = FS::RemoveInvalidFilenameChars(file.fileName);
         file.isPreferred = Json::requireBoolean(parent, "primary") || (files.count() == 1);
         auto hashList = Json::requireObject(parent, "hashes");
 

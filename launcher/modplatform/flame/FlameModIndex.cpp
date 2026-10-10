@@ -151,7 +151,8 @@ auto FlameMod::loadIndexedPackVersion(QJsonObject& obj, bool loadChangelog) -> M
     file.version = Json::requireString(obj, "displayName");
     file.downloadUrl = obj["downloadUrl"].toString();
     file.fileName = Json::requireString(obj, "fileName");
-    file.fileName = FS::RemoveInvalidPathChars(file.fileName);
+    // a file name, and not a path: a "/" in it would put the file in another folder, as "../" puts it outside of the instance
+    file.fileName = FS::RemoveInvalidFilenameChars(file.fileName);
 
     ModPlatform::IndexedVersionType verType;
     switch (Json::requireInteger(obj, "releaseType")) {

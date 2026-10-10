@@ -49,8 +49,7 @@ class HttpMetaCacheTest : public QObject {
         const QUrl plain("https://pack.example.com/a/../../../escaped.zip");
         QTest::newRow("the path of another address") << plain.host() + '/' + plain.path() << "pack.example.com/a/-/-/-/escaped.zip";
         // a backslash stays in a file name from an address on Linux, and is a separator on Windows
-        QTest::newRow("a file name with backslashes") << QUrl("https://cdn.example.com/a%5c..%5c..%5cx.png").fileName()
-                                                      << "a\\-\\-\\x.png";
+        QTest::newRow("a file name with backslashes") << QUrl("https://cdn.example.com/a%5c..%5c..%5cx.png").fileName() << "a\\-\\-\\x.png";
     }
 
     void resolveEntry()
