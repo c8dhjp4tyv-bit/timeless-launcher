@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ModrinthAPI.h"
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <algorithm>
 #include <array>
 
 #include "Application.h"
@@ -103,15 +106,63 @@ std::pair<Task::Ptr, QByteArray*> ModrinthAPI::latestVersions(const QStringList&
     return { netJob, response };
 }
 
+QList<QStringList> ModrinthAPI::splitProjectIds(const QStringList& ids, qsizetype perRequest)
+{
+    QList<QStringList> groups;
+    perRequest = std::max<qsizetype>(perRequest, 1);
+    for (qsizetype i = 0; i < ids.size(); i += perRequest) {
+        groups.append(ids.mid(i, perRequest));
+    }
+    return groups;
+}
+
+QByteArray ModrinthAPI::mergeProjectReplies(const QList<QByteArray>& replies)
+{
+    if (replies.size() == 1) {
+        return replies.first();
+    }
+    QJsonArray merged;
+    for (const auto& reply : replies) {
+        const auto doc = QJsonDocument::fromJson(reply);
+        if (!doc.isArray()) {
+            return reply;
+        }
+        for (const auto& project : doc.array()) {
+            merged.append(project);
+        }
+    }
+    return QJsonDocument(merged).toJson(QJsonDocument::Compact);
+}
+
 std::pair<Task::Ptr, QByteArray*> ModrinthAPI::getProjects(QStringList addonIds) const
 {
     auto netJob = makeShared<NetJob>(QString("Modrinth::GetProjects"), APPLICATION->network());
-    auto searchUrl = getMultipleModInfoURL(addonIds);
 
-    auto [action, response] = Net::ApiRequest::makeByteArray(QUrl(searchUrl));
-    netJob->addNetAction(action);
+    // One request for each group of ids; the replies are put together into the first one's, which is what the caller reads.
+    QList<QByteArray*> responses;
+    for (const auto& group : splitProjectIds(addonIds)) {
+        auto [action, response] = Net::ApiRequest::makeByteArray(QUrl(getMultipleModInfoURL(group)));
+        netJob->addNetAction(action);
+        responses.append(response);
+    }
+    if (responses.isEmpty()) {
+        auto [action, response] = Net::ApiRequest::makeByteArray(QUrl(getMultipleModInfoURL({})));
+        netJob->addNetAction(action);
+        responses.append(response);
+    }
 
-    return { netJob, response };
+    if (responses.size() > 1) {
+        // the job keeps the requests, and with them the replies, until it is gone; this runs before whoever called reads them
+        QObject::connect(netJob.get(), &Task::succeeded, netJob.get(), [responses] {
+            QList<QByteArray> replies;
+            for (const auto* response : responses) {
+                replies.append(*response);
+            }
+            *responses.first() = mergeProjectReplies(replies);
+        });
+    }
+
+    return { netJob, responses.first() };
 }
 
 QList<ResourceAPI::SortingMethod> ModrinthAPI::getSortingMethods() const

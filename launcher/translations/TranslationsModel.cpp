@@ -328,11 +328,6 @@ void TranslationsModel::reloadLocalFiles()
     if (languages.isEmpty()) {
         return;
     }
-    beginInsertRows(QModelIndex(), 0, d->m_languages.size() + languages.size() - 1);
-    for (auto& language : languages) {
-        d->m_languages.append(language);
-    }
-
     const auto comp = [systemLocale = getSystemLocaleName(), systemLanguage = getSystemLanguage()](const Language& a, const Language& b) {
         if (a.key != b.key) {
             if (a.key == systemLocale || a.key == systemLanguage) {
@@ -344,8 +339,16 @@ void TranslationsModel::reloadLocalFiles()
         }
         return a.languageName().toLower() < b.languageName().toLower();
     };
-    std::ranges::sort(d->m_languages, comp);
-    endInsertRows();
+    // Each one goes in at its place in the order, and is announced there. The rows were announced as the range 0 to the new row count
+    // while they were added at the end, which a view that already had the others (a language put in the folder while the page is
+    // open) took as that many new rows; and sorting after the announcement moved the others without telling anyone.
+    for (const auto& language : languages) {
+        const auto position = std::ranges::upper_bound(d->m_languages, language, comp);
+        const auto row = static_cast<int>(position - d->m_languages.begin());
+        beginInsertRows(QModelIndex(), row, row);
+        d->m_languages.insert(position, language);
+        endInsertRows();
+    }
 }
 
 namespace {
