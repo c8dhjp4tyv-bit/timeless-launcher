@@ -180,3 +180,6 @@ ecm_add_test(InstanceCommands_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERS
 
 ecm_add_test(ManagedPackName_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ManagedPackName)
+
+ecm_add_test(HttpMetaCache_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME HttpMetaCache)
