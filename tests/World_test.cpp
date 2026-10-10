@@ -294,15 +294,26 @@ class WorldTest : public QObject {
         FS::write(FS::PathCombine(world.absoluteFilePath(), "level.dat"), levelDat("Sale"));
         const auto backups = WorldBackups::backupDir(saves);
 
-        auto first = WorldBackups::createTask(world, backups);
-        QVERIFY(first);
-        QVERIFY(run(*first));
-        QVERIFY(QFileInfo::exists(first->outputPath()));
+        // The names start with the second they were made in, and the clock is not the test's to set. When it moves on between the two
+        // backups there is no collision to look at, so the pair is made again, in a folder of its own, until both are of the same second.
+        for (int attempt = 0; attempt < 10; ++attempt) {
+            const auto folder = FS::PathCombine(backups, QString::number(attempt));
+            auto first = WorldBackups::createTask(world, folder);
+            QVERIFY(first);
+            QVERIFY(run(*first));
+            QVERIFY(QFileInfo::exists(first->outputPath()));
 
-        auto second = WorldBackups::createTask(world, backups);
-        QVERIFY(second);
-        const auto firstName = QFileInfo(first->outputPath()).completeBaseName();
-        QCOMPARE(QFileInfo(second->outputPath()).fileName(), firstName + " (1).zip");
+            auto second = WorldBackups::createTask(world, folder);
+            QVERIFY(second);
+            const auto firstName = QFileInfo(first->outputPath()).completeBaseName();
+            const auto secondName = QFileInfo(second->outputPath()).fileName();
+            if (secondName.left(19) != firstName.left(19)) {
+                continue;
+            }
+            QCOMPARE(secondName, firstName + " (1).zip");
+            return;
+        }
+        QSKIP("the clock moved on between every pair of backups");
     }
 
     void copyToAnotherInstance()
