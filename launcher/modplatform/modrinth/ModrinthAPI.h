@@ -178,6 +178,17 @@ class ModrinthAPI final : public ResourceAPI {
         return BuildConfig.MODRINTH_PROD_URL + "/project/" + id;
     };
 
+    /// How many projects one request asks for. The ids are in the address, about 15 characters each once the address is encoded, and
+    /// a pack with hundreds of mods asked for all of them in one address that a server may refuse.
+    static constexpr qsizetype projectsPerRequest = 100;
+
+    /// The ids in groups of at most `perRequest`, in the order they were given
+    static QList<QStringList> splitProjectIds(const QStringList& ids, qsizetype perRequest = projectsPerRequest);
+
+    /// The replies of the requests (each a JSON array of projects) as one JSON array. A reply that isn't an array is returned as it is,
+    /// as the reply of a single request would have been.
+    static QByteArray mergeProjectReplies(const QList<QByteArray>& replies);
+
     static auto getMultipleModInfoURL(const QStringList& ids) -> QString
     {
         return BuildConfig.MODRINTH_PROD_URL + QString("/projects?ids=[\"%1\"]").arg(ids.join("\",\""));
