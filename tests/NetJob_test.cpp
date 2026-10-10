@@ -16,9 +16,17 @@
  */
 
 #include <QNetworkAccessManager>
+#include <QSignalSpy>
 #include <QTest>
 
 #include <net/NetJob.h>
+
+namespace {
+class FailingTask : public Task {
+   protected:
+    void executeTask() override { emitFailed("on purpose"); }
+};
+}  // namespace
 
 class NetJobTest : public QObject {
     Q_OBJECT
@@ -31,6 +39,22 @@ class NetJobTest : public QObject {
         QNetworkAccessManager network;
         NetJob job("nothing failed", &network);
         QVERIFY(job.getFailedActions().isEmpty());
+        QCOMPARE(job.firstFailedStatusCode(), -1);
+    }
+
+    void aFailedTaskThatIsNoRequestHasNoStatus()
+    {
+        // a task that is added to the job and fails is in the list of failed ones, as a null where a request would be
+        QNetworkAccessManager network;
+        NetJob job("one task", &network);
+        job.setAskRetry(false);
+        job.addTask(makeShared<FailingTask>());
+        QSignalSpy failed(&job, &Task::failed);
+        job.start();
+        QTRY_VERIFY_WITH_TIMEOUT(failed.count() == 1, 5000);
+
+        QCOMPARE(job.getFailedActions().size(), 1);
+        QVERIFY(job.getFailedActions().first() == nullptr);
         QCOMPARE(job.firstFailedStatusCode(), -1);
     }
 };

@@ -71,8 +71,14 @@ void NetJob::executeNextSubTask()
     if (isRunning() && m_queue.isEmpty() && m_doing.isEmpty() && !m_failed.isEmpty() && m_try < 3) {
         m_try += 1;
         m_failed.removeIf([this](QHash<Task*, Task::Ptr>::iterator task) {
+            // Only a request can be sent again. The job can hold other tasks (the refresh of an account that goes with a request,
+            // say); to ask one of them for the status of its reply is to read what isn't there.
+            auto* request = dynamic_cast<Net::Request*>(task->get());
+            if (request == nullptr) {
+                return false;
+            }
             // there is no point in retying on 404 Not Found
-            if (static_cast<Net::Request*>(task->get())->replyStatusCode() == 404) {
+            if (request->replyStatusCode() == 404) {
                 return false;
             }
             m_done.remove(task->get());
@@ -142,15 +148,22 @@ auto NetJob::getFailedActions() -> QList<Net::Request*>
 
 auto NetJob::firstFailedStatusCode() -> int
 {
-    const auto failed = getFailedActions();
-    return (failed.isEmpty() || failed.first() == nullptr) ? -1 : failed.first()->replyStatusCode();
+    // the failed tasks that are not requests are in the list as null
+    for (const auto* request : getFailedActions()) {
+        if (request != nullptr) {
+            return request->replyStatusCode();
+        }
+    }
+    return -1;
 }
 
 auto NetJob::getFailedFiles() -> QList<QString>
 {
     QList<QString> failed;
     for (auto index : m_failed) {
-        failed.append(static_cast<Net::Request*>(index.get())->url().toString());
+        if (const auto* request = dynamic_cast<Net::Request*>(index.get())) {
+            failed.append(request->url().toString());
+        }
     }
     return failed;
 }
@@ -166,6 +179,9 @@ bool NetJob::isOnline()
 {
     // check some errors that are ussually associated with the lack of internet
     for (auto job : getFailedActions()) {
+        if (job == nullptr) {
+            continue;
+        }
         auto err = job->error();
         if (err != QNetworkReply::HostNotFoundError && err != QNetworkReply::NetworkSessionFailedError) {
             return true;
@@ -186,6 +202,9 @@ void NetJob::emitFailed(QString reason)
         dialog->setAttribute(Qt::WA_DeleteOnClose);
 
         for (const auto& request : failed) {
+            if (request == nullptr) {
+                continue;
+            }
             dialog->addFailedRequest(request->url(), request->errorString());
         }
 
