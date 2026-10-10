@@ -56,6 +56,11 @@ class ManagedPackPage : public QWidget, public BasePage {
 
     void setInstanceWindow(InstanceWindow* window) { m_instanceWindow = window; }
 
+    /** The name an instance gets when its pack goes from one version to another: the version in the name is swapped for the new one.
+     *  An instance that doesn't know its version has nothing to swap, and keeps its name.
+     */
+    static QString nameForUpdate(const QString& name, const QString& oldVersion, const QString& newVersion);
+
    public slots:
     /** Gets the current version selection and update the UI, including the update button and the changelog.
      */

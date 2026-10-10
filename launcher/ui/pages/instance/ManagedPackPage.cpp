@@ -459,6 +459,16 @@ void FlameManagedPackPage::updateFromFile()
     updatePack(output, false);
 }
 
+QString ManagedPackPage::nameForUpdate(const QString& name, const QString& oldVersion, const QString& newVersion)
+{
+    // replacing nothing puts the new version between every two letters of the name
+    if (oldVersion.isEmpty()) {
+        return name;
+    }
+    QString updated = name;
+    return updated.replace(oldVersion, newVersion);
+}
+
 bool ManagedPackPage::backUpWorlds()
 {
     return GuiUtil::backUpWorldsBeforeUpdate(m_inst, this, &m_worldsBackedUpTo);
@@ -482,7 +492,7 @@ void ManagedPackPage::updatePack(const QUrl& url, bool trusted, const QString& v
         extracted->setName(m_inst->name());
     } else {
         extracted->setOriginalName(m_inst->getManagedPackName(), versionName);
-        extracted->setName(m_inst->name().replace(m_inst->getManagedPackVersionName(), versionName));
+        extracted->setName(nameForUpdate(m_inst->name(), m_inst->getManagedPackVersionName(), versionName));
     }
     extracted->setGroup(APPLICATION->instances()->getInstanceGroup(m_inst->id()));
     extracted->setIcon(m_inst->iconKey());
