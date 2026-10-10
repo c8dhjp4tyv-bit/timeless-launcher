@@ -192,3 +192,6 @@ ecm_add_test(JavaChecker_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_M
 
 ecm_add_test(NetJob_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME NetJob)
+
+ecm_add_test(POTranslator_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME POTranslator)
