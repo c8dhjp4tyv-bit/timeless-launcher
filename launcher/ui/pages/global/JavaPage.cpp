@@ -107,7 +107,8 @@ void JavaPage::on_removeJavaButton_clicked()
 
     auto entries = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
     for (auto& entry : entries) {
-        if (dcast->path.startsWith(entry.canonicalFilePath())) {
+        // "java-17" is not the folder of "java-17-jre/bin/java", and the one to remove is asked about and deleted by its folder
+        if (FS::isInside(dcast->path, entry.canonicalFilePath())) {
             auto response = CustomMessageBox::selectable(this, tr("Confirm Deletion"),
                                                          tr("You are about to remove  the Java installation named \"%1\".\n"
                                                             "Are you sure?")

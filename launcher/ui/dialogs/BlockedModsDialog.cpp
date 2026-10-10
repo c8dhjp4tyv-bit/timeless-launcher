@@ -27,8 +27,9 @@
 #include "ui_BlockedModsDialog.h"
 
 #include "Application.h"
-#include "settings/SettingsObject.h"
+#include "FileSystem.h"
 #include "modplatform/helpers/HashUtils.h"
+#include "settings/SettingsObject.h"
 
 #include <QDebug>
 #include <QDesktopServices>
@@ -288,7 +289,7 @@ void BlockedModsDialog::checkMatchHash(QString hash, QString path)
 
     qDebug() << "[Blocked Mods Dialog] Checking for match on hash:" << hash << "| From path:" << path;
 
-    auto downloadDir = QFileInfo(APPLICATION->settings()->get("DownloadsDir").toString()).absoluteFilePath();
+    const auto downloadDir = APPLICATION->settings()->get("DownloadsDir").toString();
     auto moveFiles = APPLICATION->settings()->get("MoveModsFromDownloadsDir").toBool();
     for (auto& mod : m_mods) {
         if (mod.matched) {
@@ -298,7 +299,7 @@ void BlockedModsDialog::checkMatchHash(QString hash, QString path)
             mod.matched = true;
             mod.localPath = path;
             if (moveFiles) {
-                mod.move = QFileInfo(path).absoluteFilePath().startsWith(downloadDir);
+                mod.move = FS::isInside(path, downloadDir);
             }
             match = true;
 
@@ -351,7 +352,7 @@ bool BlockedModsDialog::checkValidPath(QString path)
         return fsName.compare(metaName) == 0;
     };
 
-    auto downloadDir = QFileInfo(APPLICATION->settings()->get("DownloadsDir").toString()).absoluteFilePath();
+    const auto downloadDir = APPLICATION->settings()->get("DownloadsDir").toString();
     auto moveFiles = APPLICATION->settings()->get("MoveModsFromDownloadsDir").toBool();
     for (auto& mod : m_mods) {
         if (compare(filename, mod.name)) {
@@ -361,7 +362,7 @@ bool BlockedModsDialog::checkValidPath(QString path)
                 mod.matched = true;
                 mod.localPath = path;
                 if (moveFiles) {
-                    mod.move = QFileInfo(path).absoluteFilePath().startsWith(downloadDir);
+                    mod.move = FS::isInside(path, downloadDir);
                 }
                 return false;
             }
