@@ -186,3 +186,6 @@ ecm_add_test(HttpMetaCache_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION
 
 ecm_add_test(ProviderFileName_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ProviderFileName)
+
+ecm_add_test(JavaChecker_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME JavaChecker)
