@@ -23,6 +23,13 @@
 
 namespace MMCZip {
 
+ExtractZipTask::~ExtractZipTask()
+{
+    // The worker is on the thread pool and uses the members of this task: it has to be done with them before they go
+    m_abortRequested = true;
+    m_zipFuture.waitForFinished();
+}
+
 void ExtractZipTask::executeTask()
 {
     m_zipFuture = QtConcurrent::run(QThreadPool::globalInstance(), [this]() { return extractZip(); });

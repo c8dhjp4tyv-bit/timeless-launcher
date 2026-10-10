@@ -36,6 +36,7 @@
 #pragma once
 
 #include <QModelIndex>
+#include <QUrl>
 
 #include "TechnicData.h"
 #include "net/NetJob.h"
@@ -43,6 +44,11 @@
 namespace Technic {
 
 using LogoCallback = std::function<void(QString)>;
+
+/// Where a search goes: the trending packs for no term, the pack that a pasted address or "#name" is, or a search for the term. Whatever
+/// is typed is percent-encoded, and the arguments (the build, the client ID if there is one) are added to the ones the address has.
+/// \a single tells whether what comes back is one pack and not a list.
+QUrl searchUrl(const QString& term, const QString& baseUrl, const QString& build, const QString& clientId, bool* single = nullptr);
 
 class ListModel : public QAbstractListModel {
     Q_OBJECT

@@ -43,7 +43,7 @@ class ExportToZipTask : public Task {
     ExportToZipTask(QString outputPath, QString dir, QFileInfoList files, QString destinationPrefix = "", bool followSymlinks = false)
         : ExportToZipTask(outputPath, QDir(dir), files, destinationPrefix, followSymlinks) {};
 
-    virtual ~ExportToZipTask() = default;
+    ~ExportToZipTask() override;
 
     QString outputPath() const { return m_outputPath; }
     void setExcludeFiles(QStringList excludeFiles) { m_excludeFiles = excludeFiles; }
@@ -73,5 +73,7 @@ class ExportToZipTask : public Task {
     // What the worker checks to stop early. It can't ask m_buildZipFuture: that is only assigned once QtConcurrent::run has
     // returned, so the worker may get to it first, and until then it reads as canceled.
     std::atomic_bool m_abortRequested{ false };
+    // set by the worker when it stopped because of that, with the archive not finished
+    std::atomic_bool m_interrupted{ false };
 };
 }  // namespace MMCZip

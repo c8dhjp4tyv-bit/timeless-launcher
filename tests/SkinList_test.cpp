@@ -112,6 +112,91 @@ class SkinListTest : public QObject {
         QVERIFY(!list.installSkin(path).isEmpty());
         QCOMPARE(imagesIn(skins.path()).size(), 0);
     }
+
+    void safeFileName_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("a name") << "steve.png" << "steve.png";
+        QTest::newRow("a name with spaces inside") << "my skin.png" << "my skin.png";
+        QTest::newRow("non-ASCII letters") << "çağan ığdır.png" << "çağan ığdır.png";
+        QTest::newRow("nothing") << "" << "skin";
+        QTest::newRow("only dots") << ".." << "skin";
+        QTest::newRow("only spaces") << "   " << "skin";
+        QTest::newRow("a path up") << "../../evil.png" << "-..-evil.png";
+        QTest::newRow("a path with backslashes") << "..\\..\\evil.png" << "-..-evil.png";
+        QTest::newRow("an absolute path") << "/etc/passwd" << "-etc-passwd";
+        QTest::newRow("a drive") << "C:\\Windows\\x.png" << "C--Windows-x.png";
+        QTest::newRow("what Windows refuses") << "a*b?c\"d<e>f|g.png" << "a-b-c-d-e-f-g.png";
+        QTest::newRow("a control character") << "a\tb\nc.png" << "a-b-c.png";
+        QTest::newRow("dots and spaces at the ends") << " .skin.png. " << "skin.png";
+        // the names that Windows keeps for devices, with an extension or without, in any case
+        QTest::newRow("a device") << "CON.png" << "_CON.png";
+        QTest::newRow("a device in lower case") << "aux" << "_aux";
+        QTest::newRow("a device with a number") << "Com1.png" << "_Com1.png";
+        QTest::newRow("a device with two extensions") << "nul.tar.png" << "_nul.tar.png";
+        QTest::newRow("a name that only starts like a device") << "CONSOLE.png" << "CONSOLE.png";
+        QTest::newRow("a name with a number that is no device") << "COM10.png" << "COM10.png";
+    }
+
+    void safeFileName()
+    {
+        QFETCH(const QString, text);
+        QFETCH(const QString, expected);
+
+        const auto name = SkinList::safeFileName(text);
+        QCOMPARE(name, expected);
+        // whatever it is, it is a name and not a path
+        QCOMPARE(QFileInfo(name).fileName(), name);
+        QVERIFY(name != "." && name != "..");
+    }
+
+    void replaceFile()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto from = dir.filePath("new.png");
+        const auto to = dir.filePath("old.png");
+        for (const auto& [path, content] : { std::pair{ from, QByteArray("new") }, std::pair{ to, QByteArray("old") } }) {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(content);
+        }
+
+        const auto contents = [&to] {
+            QFile file(to);
+            return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray("(not readable)");
+        };
+
+        QVERIFY(SkinList::replaceFile(from, to));
+        QCOMPARE(contents(), QByteArray("new"));
+        // nothing is left next to it
+        QCOMPARE(QDir(dir.path()).entryList(QDir::Files).size(), 2);
+
+        // a file that isn't there changes nothing
+        QVERIFY(!SkinList::replaceFile(dir.filePath("none.png"), to));
+        QCOMPARE(contents(), QByteArray("new"));
+    }
+
+    void aNameWithAPathStaysInTheFolder()
+    {
+        QTemporaryDir from;
+        QTemporaryDir skins;
+        QVERIFY(from.isValid() && skins.isValid());
+        QDir(skins.path()).mkdir("inner");
+
+        QImage image(64, 64, QImage::Format_ARGB32);
+        image.fill(Qt::darkGreen);
+        const auto path = from.filePath("skin.png");
+        QVERIFY(image.save(path, "PNG"));
+
+        OpenList list(nullptr, QDir(skins.path()).filePath("inner"), MinecraftAccount::createOffline("Steve"));
+        QVERIFY(list.installSkin(path, "../escaped.png").isEmpty());
+
+        QCOMPARE(imagesIn(skins.path()).size(), 0);
+        QCOMPARE(imagesIn(QDir(skins.path()).filePath("inner")).size(), 1);
+    }
 };
 
 QTEST_GUILESS_MAIN(SkinListTest)

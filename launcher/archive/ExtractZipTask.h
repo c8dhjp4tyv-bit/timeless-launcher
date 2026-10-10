@@ -35,7 +35,7 @@ class ExtractZipTask : public Task {
         , m_outputDir(outputDir)
         , m_subdirectory(subdirectory.isEmpty() || subdirectory.endsWith('/') ? subdirectory : subdirectory + '/')
     {}
-    virtual ~ExtractZipTask() = default;
+    ~ExtractZipTask() override;
 
     using ZipResult = std::optional<QString>;
 

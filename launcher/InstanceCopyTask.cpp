@@ -40,9 +40,13 @@ void InstanceCopyTask::executeTask()
     setStatus(tr("Copying instance %1").arg(m_origInstance->name()));
 
     m_copyFuture = QtConcurrent::run(QThreadPool::globalInstance(), [this] {
+        // What is skipped: what the preferences leave out, and, once the copy is called off, everything that is left
+        const Filter skipped = [this](const QString& path) { return m_abortRequested || (m_matcher && m_matcher(path)); };
+        const Filter skippedOnceCalledOff = [this](const QString&) { return m_abortRequested.load(); };
+
         if (m_useClone) {
             FS::clone folderClone(m_origInstance->instanceRoot(), m_stagingPath);
-            folderClone.matcher(m_matcher);
+            folderClone.matcher(skipped);
 
             folderClone(true);
             setProgress(0, folderClone.totalCloned());
@@ -64,6 +68,7 @@ void InstanceCopyTask::executeTask()
 
                 savesCopy = std::make_unique<FS::copy>(FS::PathCombine(m_origInstance->gameRoot(), "saves"),
                                                        FS::PathCombine(staging_mc_dir, "saves"));
+                savesCopy->matcher(skippedOnceCalledOff);
                 (*savesCopy)(true);
                 setProgress(0, savesCopy->totalCopied());
                 connect(savesCopy.get(), &FS::copy::fileCopied, this,
@@ -71,7 +76,7 @@ void InstanceCopyTask::executeTask()
             }
             FS::create_link folderLink(m_origInstance->instanceRoot(), m_stagingPath);
             int depth = m_linkRecursively ? -1 : 0;  // we need to at least link the top level instead of the instance folder
-            folderLink.linkRecursively(true).setMaxDepth(depth).useHardLinks(m_useHardLinks).matcher(m_matcher);
+            folderLink.linkRecursively(true).setMaxDepth(depth).useHardLinks(m_useHardLinks).matcher(skipped);
 
             folderLink(true);
             setProgress(0, m_progressTotal + folderLink.totalToLink());
@@ -126,7 +131,7 @@ void InstanceCopyTask::executeTask()
             return !there_were_errors;
         }
         FS::copy folderCopy(m_origInstance->instanceRoot(), m_stagingPath);
-        folderCopy.matcher(m_matcher);
+        folderCopy.matcher(skipped);
 
         folderCopy(true);
         setProgress(0, folderCopy.totalCopied());
@@ -140,12 +145,25 @@ void InstanceCopyTask::executeTask()
         return copied;
     });
     connect(&m_copyFutureWatcher, &QFutureWatcher<bool>::finished, this, &InstanceCopyTask::copyFinished);
-    connect(&m_copyFutureWatcher, &QFutureWatcher<bool>::canceled, this, &InstanceCopyTask::copyAborted);
     m_copyFutureWatcher.setFuture(m_copyFuture);
+}
+
+InstanceCopyTask::~InstanceCopyTask()
+{
+    // The copy runs on the thread pool and uses this task and its instance: it has to be over before they go
+    m_abortRequested = true;
+    m_copyFuture.waitForFinished();
 }
 
 void InstanceCopyTask::copyFinished()
 {
+    // A copy that was called off ends here, when the last file it was on is done, and not when it was called off: the folder it copies
+    // into is taken away as soon as the task is over, and the files that are still being copied would be put back into it.
+    if (m_abortRequested) {
+        emitFailed(tr("Instance folder copy has been aborted."));
+        return;
+    }
+
     auto successful = m_copyFuture.result();
     if (!successful) {
         QString reason = tr("Instance folder copy failed.");
@@ -198,18 +216,12 @@ void InstanceCopyTask::copyFinished()
     emitSucceeded();
 }
 
-void InstanceCopyTask::copyAborted()
-{
-    emitFailed(tr("Instance folder copy has been aborted."));
-    return;
-}
-
 bool InstanceCopyTask::abort()
 {
     if (m_copyFutureWatcher.isRunning()) {
-        m_copyFutureWatcher.cancel();
-        // NOTE: Here we don't do `emitAborted()` because it will be done when `m_copyFutureWatcher` actually cancels, which may not occur
-        // immediately.
+        // The copy looks at this for every file, and copyFinished() ends the task once it has stopped. Canceling the future would only
+        // mark it: the thread goes on copying.
+        m_abortRequested = true;
         return true;
     }
     return false;

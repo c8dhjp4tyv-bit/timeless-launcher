@@ -59,6 +59,44 @@ class StringUtilsTest : public QObject {
 
         QCOMPARE(StringUtils::replaceTokens(text, values), expected);
     }
+
+    void splitFirst_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<QString>("separator");
+        QTest::addColumn<QString>("left");
+        QTest::addColumn<QString>("right");
+
+        QTest::newRow("found") << "Version: 1.2" << ": " << "Version" << "1.2";
+        QTest::newRow("found once, the second is kept") << "a: b: c" << ": " << "a" << "b: c";
+        QTest::newRow("at the start") << ": b" << ": " << "" << "b";
+        QTest::newRow("at the end") << "a: " << ": " << "a" << "";
+        QTest::newRow("one letter, found") << "a=b" << "=" << "a" << "b";
+        // the whole text is on the left side, whatever the length of the separator
+        QTest::newRow("not found, two letters") << "Version 1.2" << ": " << "Version 1.2" << "";
+        QTest::newRow("not found, one letter") << "Version 1.2" << "=" << "Version 1.2" << "";
+        QTest::newRow("not found, three letters") << "linux" << "-qt" << "linux" << "";
+        QTest::newRow("not found, in an empty text") << "" << ": " << "" << "";
+    }
+
+    void splitFirst()
+    {
+        QFETCH(const QString, text);
+        QFETCH(const QString, separator);
+        QFETCH(const QString, left);
+        QFETCH(const QString, right);
+
+        const auto [first, second] = StringUtils::splitFirst(text, separator);
+        QCOMPARE(first, left);
+        QCOMPARE(second, right);
+
+        // the overload for one character does the same
+        if (separator.size() == 1) {
+            const auto [firstChar, secondChar] = StringUtils::splitFirst(text, separator.at(0));
+            QCOMPARE(firstChar, left);
+            QCOMPARE(secondChar, right);
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(StringUtilsTest)

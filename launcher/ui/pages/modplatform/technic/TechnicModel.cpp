@@ -46,6 +46,50 @@
 #include <QIcon>
 #include <QUrl>
 
+namespace Technic {
+QUrl searchUrl(const QString& term, const QString& baseUrl, const QString& build, const QString& clientId, bool* single)
+{
+    static const QString s_packsUrl = "https://api.technicpack.net/modpack/";
+    const auto encode = [](const QString& text) { return QString::fromLatin1(QUrl::toPercentEncoding(text)); };
+
+    QUrl url;
+    QStringList kept;  // what an address that was pasted already asks, but for the arguments set here
+    QStringList arguments;
+    bool isSingle = true;
+    if (term.isEmpty()) {
+        url = QUrl(baseUrl + "trending");
+        isSingle = false;
+    } else if (term.startsWith("http://api.technicpack.net/modpack/")) {
+        url = QUrl("https://" + term.mid(7));
+    } else if (term.startsWith(s_packsUrl)) {
+        url = QUrl(term);
+    } else if (term.startsWith("#")) {
+        url = QUrl(s_packsUrl + encode(term.mid(1)));
+    } else {
+        url = QUrl(baseUrl + "search");
+        arguments.append("q=" + encode(term));
+        isSingle = false;
+    }
+
+    for (const auto& argument : url.query(QUrl::FullyEncoded).split('&', Qt::SkipEmptyParts)) {
+        const auto name = argument.section('=', 0, 0);
+        if (name != "build" && name != "q" && name != "cid") {
+            kept.append(argument);
+        }
+    }
+    arguments.prepend("build=" + encode(build));
+    if (!clientId.isEmpty()) {
+        arguments.append("cid=" + encode(clientId));
+    }
+    url.setQuery((kept + arguments).join('&'), QUrl::StrictMode);
+
+    if (single != nullptr) {
+        *single = isSingle;
+    }
+    return url;
+}
+}  // namespace Technic
+
 Technic::ListModel::ListModel(QObject* parent) : QAbstractListModel(parent) {}
 
 Technic::ListModel::~ListModel() {}
@@ -135,29 +179,11 @@ void Technic::ListModel::performSearch()
         return;
 
     auto netJob = makeShared<NetJob>("Technic::Search", APPLICATION->network());
-    QString searchUrl = "";
-    if (currentSearchTerm.isEmpty()) {
-        searchUrl = QString("%1trending?build=%2").arg(BuildConfig.TECHNIC_API_BASE_URL, BuildConfig.TECHNIC_API_BUILD);
-        searchMode = List;
-    } else if (currentSearchTerm.startsWith("http://api.technicpack.net/modpack/")) {
-        searchUrl = QString("https://%1?build=%2").arg(currentSearchTerm.mid(7), BuildConfig.TECHNIC_API_BUILD);
-        searchMode = Single;
-    } else if (currentSearchTerm.startsWith("https://api.technicpack.net/modpack/")) {
-        searchUrl = QString("%1?build=%2").arg(currentSearchTerm, BuildConfig.TECHNIC_API_BUILD);
-        searchMode = Single;
-    } else if (currentSearchTerm.startsWith("#")) {
-        searchUrl = QString("https://api.technicpack.net/modpack/%1?build=%2").arg(currentSearchTerm.mid(1), BuildConfig.TECHNIC_API_BUILD);
-        searchMode = Single;
-    } else {
-        searchUrl =
-            QString("%1search?build=%2&q=%3").arg(BuildConfig.TECHNIC_API_BASE_URL, BuildConfig.TECHNIC_API_BUILD, currentSearchTerm);
-        searchMode = List;
-    }
-    auto clientId = APPLICATION->settings()->get("TechnicClientID").toString();
-    if (!clientId.isEmpty()) {
-        searchUrl += "?cid=" + clientId;
-    }
-    auto [action, response] = Net::ApiRequest::makeByteArray(QUrl(searchUrl));
+    bool single = false;
+    const auto searchUrl = Technic::searchUrl(currentSearchTerm, BuildConfig.TECHNIC_API_BASE_URL, BuildConfig.TECHNIC_API_BUILD,
+                                              APPLICATION->settings()->get("TechnicClientID").toString(), &single);
+    searchMode = single ? Single : List;
+    auto [action, response] = Net::ApiRequest::makeByteArray(searchUrl);
     netJob->addNetAction(action);
     jobPtr = netJob;
     jobPtr->start();

@@ -48,6 +48,13 @@ class SkinList : public QAbstractListModel {
     void installSkins(const QStringList& iconFiles);
     QString installSkin(const QString& file, const QString& name = {});
 
+    /// A name for a file in the folder of skins out of text that is typed or that an address ends in: it has no path in it, nothing that a
+    /// file system won't take, and it is never empty (it is "skin" if nothing is left of it).
+    static QString safeFileName(const QString& text);
+
+    /// Puts the contents of a file where another one is, which is left as it was if that fails
+    static bool replaceFile(const QString& from, const QString& to);
+
     const SkinModel* skin(const QString& key) const;
     SkinModel* skin(const QString& key);
 

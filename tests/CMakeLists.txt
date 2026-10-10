@@ -159,3 +159,18 @@ ecm_add_test(LibraryUtils_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_
 
 ecm_add_test(SkinList_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME SkinList)
+
+ecm_add_test(PasteUpload_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME PasteUpload)
+
+ecm_add_test(SearchUrl_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME SearchUrl)
+
+ecm_add_test(TechnicSearch_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME TechnicSearch)
+
+ecm_add_test(InstanceCopyTask_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME InstanceCopyTask)
+
+ecm_add_test(ServerEntry_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ServerEntry)

@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QList>
+#include <QUrl>
 #include <cstdint>
 #include "BuildConfig.h"
 #include "Version.h"
@@ -101,7 +102,8 @@ class FlameAPI final : public ResourceAPI {
         getArguments.append(QString("index=%1").arg(args.offset));
         getArguments.append("pageSize=25");
         if (args.search.has_value()) {
-            getArguments.append(QString("searchFilter=%1").arg(args.search.value()));
+            // What is typed goes in as it is: an "&" would start another argument, a "#" would end the address, and a "+" is a space
+            getArguments.append(QString("searchFilter=%1").arg(QString::fromLatin1(QUrl::toPercentEncoding(args.search.value()))));
         }
         if (args.sorting.has_value()) {
             getArguments.append(QString("sortField=%1").arg(args.sorting.value().index));
