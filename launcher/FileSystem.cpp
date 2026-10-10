@@ -991,7 +991,12 @@ QString removeChars(QString source, QChar replace, const QString& extraChars = "
 
 QString RemoveInvalidFilenameChars(QString string, QChar replaceWith)
 {
-    return removeChars(std::move(string), replaceWith, "\\/");
+    auto name = removeChars(std::move(string), replaceWith, "\\/");
+    // "." and ".." are the folder itself and the one above it, not names of files: a download "to" them is a download to a folder
+    if (name == "." || name == "..") {
+        name.fill(replaceWith);
+    }
+    return name;
 }
 
 QString RemoveInvalidPathChars(QString string, QChar replaceWith)

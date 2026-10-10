@@ -173,6 +173,37 @@ class FileSystemTest : public QObject {
         QCOMPARE(FS::PathCombine(path1, path2, path3), result);
     }
 
+    void test_removeInvalidFilenameChars_data()
+    {
+        QTest::addColumn<QString>("name");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("a name") << "mod-1.0.jar" << "mod-1.0.jar";
+        QTest::newRow("separators") << "a/b\\c.jar" << "a-b-c.jar";
+        QTest::newRow("characters Windows refuses") << "a:b*c?.jar" << "a-b-c-.jar";
+        QTest::newRow("one dot") << "." << "-";
+        QTest::newRow("two dots") << ".." << "--";
+        QTest::newRow("dots in a name") << "..a" << "..a";
+        QTest::newRow("three dots") << "..." << "...";
+        QTest::newRow("dots around a separator") << "./." << ".-.";
+    }
+
+    void test_removeInvalidFilenameChars()
+    {
+        QFETCH(QString, name);
+        QFETCH(QString, expected);
+        QCOMPARE(FS::RemoveInvalidFilenameChars(name), expected);
+    }
+
+    void test_dirNameFromDots()
+    {
+        // an instance, or a world, called ".." gets a folder of its own and not the one above the instances
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        QCOMPARE(FS::DirNameFromString("..", temp.path()), QString("--"));
+        QCOMPARE(FS::DirNameFromString(".", temp.path()), QString("-"));
+    }
+
     void test_isInside_data()
     {
         QTest::addColumn<QString>("path");

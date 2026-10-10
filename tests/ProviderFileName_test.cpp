@@ -66,6 +66,10 @@ class ProviderFileNameTest : public QObject {
         QTest::newRow("a folder") << "config/options.jar" << "config-options.jar";
         QTest::newRow("backslashes") << "..\\..\\escaped.jar" << "..-..-escaped.jar";
         QTest::newRow("an absolute path") << "/etc/escaped.jar" << "-etc-escaped.jar";
+        // a name of dots only is a folder: the file would be "downloaded" to the mods folder, or to the one above it
+        QTest::newRow("one dot") << "." << "-";
+        QTest::newRow("two dots") << ".." << "--";
+        QTest::newRow("three dots") << "..." << "...";
         QTest::newRow("characters Windows refuses") << "a:b*c?.jar" << "a-b-c-.jar";
     }
 
