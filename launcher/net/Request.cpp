@@ -57,6 +57,7 @@
 #include "net/ApiHeaderProxy.h"
 #include "net/ChecksumValidator.h"
 #include "net/MetaCacheSink.h"
+#include "net/NetUtils.h"
 #include "settings/SettingsObject.h"
 #else
 #include "BuildConfig.h"
@@ -233,21 +234,8 @@ void Request::downloadError(QNetworkReply::NetworkError error)
         qCDebug(m_logCat) << getUid().toString() << "Rate Limited!";
         auto delay = static_cast<int64_t>(10 * std::pow(2, m_retryCount));
         if (m_reply->hasRawHeader("Retry-After")) {
-            auto retryAfter = m_reply->rawHeader("Retry-After");
-            if (retryAfter.trimmed().endsWith("GMT")) /* HTTP Date format */ {
-                auto afterTimestamp = QDateTime::fromString(QString::fromUtf8(retryAfter.trimmed()), "ddd, dd MMM yyyy HH:mm:ss 'GMT'");
-                if (afterTimestamp.isValid()) {
-                    auto seconds = QDateTime::currentDateTime().secsTo(afterTimestamp);
-                    if (seconds > 0) {
-                        delay = seconds;
-                    }
-                }
-            } else {
-                bool ok = false;
-                auto seconds = retryAfter.toLongLong(&ok);
-                if (ok && seconds > 0) {
-                    delay = seconds;
-                }
+            if (auto seconds = Net::retryAfterSeconds(m_reply->rawHeader("Retry-After"))) {
+                delay = *seconds;
             }
         }
         handleAutoRetry(delay);
