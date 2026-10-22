@@ -57,7 +57,6 @@
 #include "net/ApiHeaderProxy.h"
 #include "net/ChecksumValidator.h"
 #include "net/MetaCacheSink.h"
-#include "net/NetUtils.h"
 #include "settings/SettingsObject.h"
 #else
 #include "BuildConfig.h"
@@ -65,6 +64,7 @@
 #include "net/ByteArraySink.h"
 #include "net/FileSink.h"
 #include "net/Logging.h"
+#include "net/NetUtils.h"
 #include "tasks/Task.h"
 
 #include "MMCTime.h"
