@@ -124,16 +124,17 @@ bool parseOldFileFormat(QIODevice& device, QSettings::SettingsMap& map)
     QStringList lines = in.readAll().split('\n');
     for (int i = 0; i < lines.count(); i++) {
         QString& lineRaw = lines[i];
-        // Ignore comments.
-        qsizetype commentIndex = 0;
+        // Ignore comments: everything from the first # that isn't escaped.
         QString line = lineRaw;
-        // Search for comments until no more escaped # are available
-        while ((commentIndex = line.indexOf('#', commentIndex + 1)) != -1) {
-            if (commentIndex > 0 && line.at(commentIndex - 1) == '\\') {
-                continue;
+        for (qsizetype pos = 0; pos < line.size(); pos++) {
+            if (line.at(pos) == '\\') {
+                pos++;  // the next character is escaped, whatever it is
+            } else if (line.at(pos) == '#') {
+                line.truncate(pos);
+                break;
             }
-            line = line.left(lineRaw.indexOf('#')).trimmed();
         }
+        line = line.trimmed();
 
         auto eqPos = line.indexOf('=');
         if (eqPos == -1) {
