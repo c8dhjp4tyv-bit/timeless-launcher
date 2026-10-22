@@ -43,21 +43,9 @@
 
 #include "tasks/Task.h"
 
+#include "ProgressMapping.h"
+
 #include "ui/widgets/SubTaskProgressBar.h"
-
-// map a value in a numeric range of an arbitrary type to between 0 and INT_MAX
-// for getting the best precision out of the qt progress bar
-template <typename T, std::enable_if_t<std::is_arithmetic_v<T>, bool> = true>
-std::tuple<int, int> map_int_zero_max(T current, T range_max, T range_min)
-{
-    int int_max = std::numeric_limits<int>::max();
-
-    auto type_range = range_max - range_min;
-    double percentage = static_cast<double>(current - range_min) / static_cast<double>(type_range);
-    int mapped_current = percentage * int_max;
-
-    return { mapped_current, int_max };
-}
 
 ProgressDialog::ProgressDialog(QWidget* parent) : QDialog(parent), ui(new Ui::ProgressDialog)
 {

@@ -163,6 +163,9 @@ ecm_add_test(SkinList_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJO
 ecm_add_test(NetUtils_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME NetUtils)
 
+ecm_add_test(ProgressMapping_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ProgressMapping)
+
 ecm_add_test(PasteUpload_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME PasteUpload)
 
