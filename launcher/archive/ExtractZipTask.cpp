@@ -85,6 +85,12 @@ auto ExtractZipTask::extractZip() -> ZipResult
             QString sub_path;
             if (relative_file_name.contains('/') && !relative_file_name.endsWith('/')) {
                 sub_path = relative_file_name.section('/', 0, -2) + '/';
+                // check before making the folder: a path with .. in it can lead out of the target
+                if (!FS::isInsideOrSame(FS::PathCombine(target, sub_path), target)) {
+                    result = ZipResult(tr("Extracting %1 was cancelled, because it was effectively outside of the target path %2")
+                                           .arg(relative_file_name, target));
+                    return false;
+                }
                 FS::ensureFolderPathExists(FS::PathCombine(target, sub_path));
 
                 relative_file_name = relative_file_name.split('/').last();

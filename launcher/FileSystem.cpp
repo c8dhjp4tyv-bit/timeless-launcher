@@ -893,6 +893,24 @@ bool isInside(const QString& path, const QString& folder)
     return cleanPath.size() > prefix.size() && cleanPath.startsWith(prefix, caseSensitivity);
 }
 
+bool isInsideOrSame(const QString& path, const QString& folder)
+{
+    if (isInside(path, folder)) {
+        return true;
+    }
+    if (folder.isEmpty() || path.isEmpty()) {
+        return false;
+    }
+    const auto cleanFolder = QDir::cleanPath(QFileInfo(folder).absoluteFilePath());
+    const auto cleanPath = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+#if defined(Q_OS_WIN)
+    constexpr auto caseSensitivity = Qt::CaseInsensitive;
+#else
+    constexpr auto caseSensitivity = Qt::CaseSensitive;
+#endif
+    return cleanPath.compare(cleanFolder, caseSensitivity) == 0;
+}
+
 int pathDepth(const QString& path)
 {
     if (path.isEmpty())

@@ -237,6 +237,35 @@ class FileSystemTest : public QObject {
         QCOMPARE(FS::isInside(path, folder), inside);
     }
 
+    void test_isInsideOrSame_data()
+    {
+        QTest::addColumn<QString>("path");
+        QTest::addColumn<QString>("folder");
+        QTest::addColumn<bool>("inside");
+
+        QTest::newRow("a file in it") << "/a/b/c.jar" << "/a/b" << true;
+        QTest::newRow("the folder itself") << "/a/b" << "/a/b" << true;
+        QTest::newRow("the folder itself with a separator") << "/a/b/" << "/a/b" << true;
+        QTest::newRow("the folder itself by way of ..") << "/a/b/sub/.." << "/a/b" << true;
+        QTest::newRow("the folder itself with .. and a separator") << "/a/b/sub/../" << "/a/b" << true;
+        QTest::newRow("a segment that leads out and back") << "/a/b/x/../c" << "/a/b" << true;
+        QTest::newRow("its parent") << "/a" << "/a/b" << false;
+        QTest::newRow("a segment that leads out") << "/a/b/../c" << "/a/b" << false;
+        QTest::newRow("two segments that lead out") << "/a/b/../../c" << "/a/b" << false;
+        QTest::newRow("a sibling with the same start") << "/a/bc" << "/a/b" << false;
+        QTest::newRow("empty folder") << "/a/b" << "" << false;
+        QTest::newRow("empty path") << "" << "/a/b" << false;
+        QTest::newRow("both empty") << "" << "" << false;
+    }
+
+    void test_isInsideOrSame()
+    {
+        QFETCH(QString, path);
+        QFETCH(QString, folder);
+        QFETCH(bool, inside);
+        QCOMPARE(FS::isInsideOrSame(path, folder), inside);
+    }
+
     void test_isInside_relative()
     {
         // both are made absolute from where the program is

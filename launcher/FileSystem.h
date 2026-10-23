@@ -342,6 +342,11 @@ QString AbsolutePath(const QString& path);
 bool isInside(const QString& path, const QString& folder);
 
 /**
+ * @brief like isInside(), but the folder itself counts: "/a/b/../b" is in "/a/b".
+ */
+bool isInsideOrSame(const QString& path, const QString& folder);
+
+/**
  * @brief depth of path. "foo.txt" -> 0 , "bar/foo.txt" -> 1, /baz/bar/foo.txt -> 2, etc.
  *
  * @param path path to measure
