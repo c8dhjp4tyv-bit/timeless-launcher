@@ -97,6 +97,31 @@ class StringUtilsTest : public QObject {
             QCOMPARE(secondChar, right);
         }
     }
+
+    void truncateUrl_data()
+    {
+        QTest::addColumn<QString>("url");
+        QTest::addColumn<int>("maxLen");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("short enough") << "https://example.com/a/b/file.zip" << 100 << "https://example.com/a/b/file.zip";
+        QTest::newRow("the middle goes") << "https://example.com/aaaa/bbbb/cccc/dddd/file.zip" << 42
+                                         << "https://example.com/aaaa/bbbb/.../file.zip";
+        QTest::newRow("a query is kept after a question mark") << "https://example.com/aaaa/bbbb/cccc/dddd/file.zip?token=abc&x=1" << 60
+                                                               << "https://example.com/aaaa/bbbb/.../file.zip?token=abc&x=1";
+        QTest::newRow("userinfo and fragment are not shown")
+            << "https://user:pw@example.com/a/b/c/d/e/f/g/file.zip#frag" << 30 << "https://example.com/.../file.zip";
+    }
+
+    void truncateUrl()
+    {
+        QFETCH(QString, url);
+        QFETCH(int, maxLen);
+        QFETCH(QString, expected);
+
+        QUrl u(url);
+        QCOMPARE(StringUtils::truncateUrlHumanFriendly(u, maxLen), expected);
+    }
 };
 
 QTEST_GUILESS_MAIN(StringUtilsTest)
