@@ -46,6 +46,21 @@ class ExtractZipTest : public QObject {
         return files;
     }
 
+    /// Everything under the folder with "escaped" in its name, relative to the folder
+    static QStringList entriesNamedEscaped(const QString& folder)
+    {
+        QStringList found;
+        QDirIterator it(folder, QDir::AllEntries | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const auto relative = QDir(folder).relativeFilePath(it.next());
+            if (relative.contains("escaped")) {
+                found << relative;
+            }
+        }
+        found.sort();
+        return found;
+    }
+
     /// Writes an instance zip whose last file is damaged in a way that shows only once it is extracted: the headers of
     /// its files, which are all that is read before extracting, are fine.
     static void writeZipDamagedAtTheEnd(const QString& zipPath)
@@ -116,6 +131,67 @@ class ExtractZipTest : public QObject {
         QVERIFY(task.wasSuccessful());
 
         QCOMPARE(filesIn(target), (QStringList{ "instance.cfg", "minecraft/options.txt" }));
+    }
+
+    // An entry that names a path above the target is refused, and nothing is made above the target on the way to refusing it
+    void refuseEntryAboveTheTarget_data()
+    {
+        QTest::addColumn<QString>("entry");
+        QTest::newRow("one level up") << "../escaped/file.txt";
+        QTest::newRow("deep folder one level up") << "../escaped/deep/er/file.txt";
+        QTest::newRow("two levels up") << "../../escaped/deep/file.txt";
+        QTest::newRow("up in the middle") << "sub/../../escaped/deep/file.txt";
+    }
+
+    void refuseEntryAboveTheTarget()
+    {
+        QFETCH(QString, entry);
+
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        // the target is two folders down, so two levels up is still inside the temporary folder
+        const auto base = temp.filePath("a/b");
+        QVERIFY(QDir().mkpath(base));
+
+        const auto zipPath = temp.filePath("evil.zip");
+        MMCZip::ArchiveWriter zip(zipPath);
+        QVERIFY(zip.open());
+        QVERIFY(zip.addFile("fine.txt", QByteArray("fine\n")));
+        QVERIFY(zip.addFile(entry, QByteArray("escaped\n")));
+        QVERIFY(zip.close());
+
+        const auto target = base + "/extracted";
+        MMCZip::ExtractZipTask task(zipPath, QDir(target));
+        QSignalSpy finished(&task, &Task::finished);
+        task.start();
+        QTRY_COMPARE(finished.count(), 1);
+
+        // nothing named escaped is anywhere in the temporary folder
+        QCOMPARE(entriesNamedEscaped(temp.path()), QStringList());
+    }
+
+    void refuseSubDirEntryAboveTheTarget_data() { refuseEntryAboveTheTarget_data(); }
+
+    void refuseSubDirEntryAboveTheTarget()
+    {
+        QFETCH(QString, entry);
+
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto base = temp.filePath("a/b");
+        QVERIFY(QDir().mkpath(base));
+
+        const auto zipPath = temp.filePath("evil.zip");
+        MMCZip::ArchiveWriter zip(zipPath);
+        QVERIFY(zip.open());
+        QVERIFY(zip.addFile("fine.txt", QByteArray("fine\n")));
+        QVERIFY(zip.addFile(entry, QByteArray("escaped\n")));
+        QVERIFY(zip.close());
+
+        MMCZip::ArchiveReader reader(zipPath);
+        MMCZip::extractSubDir(&reader, "", base + "/extracted");
+
+        QCOMPARE(entriesNamedEscaped(temp.path()), QStringList());
     }
 
     void cutShort()

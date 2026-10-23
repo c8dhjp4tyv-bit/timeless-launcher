@@ -776,14 +776,20 @@ bool deleteContents(const QString& path)
 
     bool ret = true;
 
-    for (const auto& entry : fs::directory_iterator(StringUtils::toStdString(path))) {
+    // the iterator throws when the folder can't be read, unless it is given somewhere to put the error
+    std::error_code listErr;
+    for (fs::directory_iterator it(StringUtils::toStdString(path), listErr), end; !listErr && it != end; it.increment(listErr)) {
         std::error_code err;
 
-        fs::remove_all(entry.path(), err);
+        fs::remove_all(it->path(), err);
         if (err.value() != 0) {
-            qWarning().nospace() << "Could not delete directory entry " << entry.path() << ": " << QString::fromStdString(err.message());
+            qWarning().nospace() << "Could not delete directory entry " << it->path() << ": " << QString::fromStdString(err.message());
             ret = false;
         }
+    }
+    if (listErr) {
+        qWarning().nospace() << "Could not list the contents of " << path << ": " << QString::fromStdString(listErr.message());
+        ret = false;
     }
 
     return ret;
@@ -891,6 +897,24 @@ bool isInside(const QString& path, const QString& folder)
     // a root ("/" or "C:/") already ends with the separator that the rest of the path has to start after
     const auto prefix = cleanFolder.endsWith('/') ? cleanFolder : cleanFolder + '/';
     return cleanPath.size() > prefix.size() && cleanPath.startsWith(prefix, caseSensitivity);
+}
+
+bool isInsideOrSame(const QString& path, const QString& folder)
+{
+    if (isInside(path, folder)) {
+        return true;
+    }
+    if (folder.isEmpty() || path.isEmpty()) {
+        return false;
+    }
+    const auto cleanFolder = QDir::cleanPath(QFileInfo(folder).absoluteFilePath());
+    const auto cleanPath = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+#if defined(Q_OS_WIN)
+    constexpr auto caseSensitivity = Qt::CaseInsensitive;
+#else
+    constexpr auto caseSensitivity = Qt::CaseSensitive;
+#endif
+    return cleanPath.compare(cleanFolder, caseSensitivity) == 0;
 }
 
 int pathDepth(const QString& path)

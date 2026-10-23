@@ -215,6 +215,12 @@ std::optional<QStringList> extractSubDir(ArchiveReader* zip, const QString& subd
             QString sub_path;
             if (relative_file_name.contains('/') && !relative_file_name.endsWith('/')) {
                 sub_path = relative_file_name.section('/', 0, -2) + '/';
+                // check before making the folder: a path with .. in it can lead out of the target
+                if (!FS::isInsideOrSame(FS::PathCombine(target, sub_path), target)) {
+                    qWarning() << "Extracting" << relative_file_name
+                               << "was cancelled, because it was effectively outside of the target path" << target;
+                    return false;
+                }
                 FS::ensureFolderPathExists(FS::PathCombine(target, sub_path));
 
                 relative_file_name = relative_file_name.split('/').last();

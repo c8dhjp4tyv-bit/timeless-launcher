@@ -237,6 +237,61 @@ class FileSystemTest : public QObject {
         QCOMPARE(FS::isInside(path, folder), inside);
     }
 
+    // A folder that can't be read has nothing that can be deleted, and that is a failure to report rather than an exception
+    void test_deleteContentsOfAFolderThatCantBeRead()
+    {
+#if defined(Q_OS_UNIX)
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto folder = temp.filePath("locked");
+        QVERIFY(QDir().mkpath(folder));
+        QFile file(folder + "/file.txt");
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+
+        QVERIFY(QFile::setPermissions(folder, QFileDevice::Permissions()));
+        // the temporary folder can only be removed when this is back
+        const QScopeGuard restore(
+            [&folder] { QFile::setPermissions(folder, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner); });
+        // whoever may read it anyway (root) can't show this
+        if (QFileInfo(folder).isReadable()) {
+            QSKIP("the folder can be read by whoever runs this, so it doesn't show anything");
+        }
+        QVERIFY(!FS::deleteContents(folder));
+#else
+        QSKIP("needs the permissions of a Unix folder");
+#endif
+    }
+
+    void test_isInsideOrSame_data()
+    {
+        QTest::addColumn<QString>("path");
+        QTest::addColumn<QString>("folder");
+        QTest::addColumn<bool>("inside");
+
+        QTest::newRow("a file in it") << "/a/b/c.jar" << "/a/b" << true;
+        QTest::newRow("the folder itself") << "/a/b" << "/a/b" << true;
+        QTest::newRow("the folder itself with a separator") << "/a/b/" << "/a/b" << true;
+        QTest::newRow("the folder itself by way of ..") << "/a/b/sub/.." << "/a/b" << true;
+        QTest::newRow("the folder itself with .. and a separator") << "/a/b/sub/../" << "/a/b" << true;
+        QTest::newRow("a segment that leads out and back") << "/a/b/x/../c" << "/a/b" << true;
+        QTest::newRow("its parent") << "/a" << "/a/b" << false;
+        QTest::newRow("a segment that leads out") << "/a/b/../c" << "/a/b" << false;
+        QTest::newRow("two segments that lead out") << "/a/b/../../c" << "/a/b" << false;
+        QTest::newRow("a sibling with the same start") << "/a/bc" << "/a/b" << false;
+        QTest::newRow("empty folder") << "/a/b" << "" << false;
+        QTest::newRow("empty path") << "" << "/a/b" << false;
+        QTest::newRow("both empty") << "" << "" << false;
+    }
+
+    void test_isInsideOrSame()
+    {
+        QFETCH(QString, path);
+        QFETCH(QString, folder);
+        QFETCH(bool, inside);
+        QCOMPARE(FS::isInsideOrSame(path, folder), inside);
+    }
+
     void test_isInside_relative()
     {
         // both are made absolute from where the program is
