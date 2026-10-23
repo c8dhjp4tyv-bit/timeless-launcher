@@ -237,6 +237,32 @@ class FileSystemTest : public QObject {
         QCOMPARE(FS::isInside(path, folder), inside);
     }
 
+    // A folder that can't be read has nothing that can be deleted, and that is a failure to report rather than an exception
+    void test_deleteContentsOfAFolderThatCantBeRead()
+    {
+#if defined(Q_OS_UNIX)
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto folder = temp.filePath("locked");
+        QVERIFY(QDir().mkpath(folder));
+        QFile file(folder + "/file.txt");
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+
+        QVERIFY(QFile::setPermissions(folder, QFileDevice::Permissions()));
+        // the temporary folder can only be removed when this is back
+        const QScopeGuard restore(
+            [&folder] { QFile::setPermissions(folder, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner); });
+        // whoever may read it anyway (root) can't show this
+        if (QFileInfo(folder).isReadable()) {
+            QSKIP("the folder can be read by whoever runs this, so it doesn't show anything");
+        }
+        QVERIFY(!FS::deleteContents(folder));
+#else
+        QSKIP("needs the permissions of a Unix folder");
+#endif
+    }
+
     void test_isInsideOrSame_data()
     {
         QTest::addColumn<QString>("path");
