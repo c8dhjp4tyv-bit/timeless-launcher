@@ -190,6 +190,37 @@ PreLaunchCommand=)";
         FS::deletePath(fileName);
 #endif
     }
+
+    void test_OldFormatComments_data()
+    {
+        QTest::addColumn<QString>("line");
+        QTest::addColumn<QString>("key");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("plain") << "name=value" << "name" << "value";
+        QTest::newRow("trailing comment") << "name=value # comment" << "name" << "value";
+        QTest::newRow("trailing comment without space") << "name=value#comment" << "name" << "value";
+        QTest::newRow("escaped hash") << "name=a\\#b" << "name" << "a#b";
+        QTest::newRow("escaped hash then comment") << "name=a\\#b # comment" << "name" << "a#b";
+        QTest::newRow("two escaped hashes then comment") << "name=a\\#b\\#c # comment" << "name" << "a#b#c";
+        QTest::newRow("escaped hash after comment") << "name=a # b\\#c" << "name" << "a";
+        QTest::newRow("escaped backslash then comment") << "name=a\\\\ # comment" << "name" << "a\\";
+        QTest::newRow("commented out setting") << "#name=value" << "#name" << "NOT SET";
+        QTest::newRow("commented out setting after spaces") << "  # name=value" << "name" << "NOT SET";
+    }
+
+    void test_OldFormatComments()
+    {
+        QFETCH(QString, line);
+        QFETCH(QString, key);
+        QFETCH(QString, expected);
+
+        // no ConfigVersion, so the file is read in the old format
+        INIFile file;
+        QVERIFY(file.loadFile(QByteArray("other=1\n" + line.toUtf8() + "\n")));
+        QCOMPARE(file.get("other", "NOT SET").toString(), "1");
+        QCOMPARE(file.get(key, "NOT SET").toString(), expected);
+    }
 };
 
 QTEST_GUILESS_MAIN(IniFileTest)

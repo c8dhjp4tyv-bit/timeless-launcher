@@ -18,8 +18,13 @@
 
 #pragma once
 
+#include <QByteArray>
+#include <QDateTime>
+#include <QLocale>
 #include <QNetworkReply>
 #include <QSet>
+#include <QTimeZone>
+#include <optional>
 
 namespace Net {
 inline bool isApplicationError(QNetworkReply::NetworkError x)
@@ -53,5 +58,32 @@ inline bool isServerError(QNetworkReply::NetworkError x)
                                                         // Qt doesn't have it mapped. Unknown covers it
                                                         QNetworkReply::UnknownServerError };
     return errors.contains(x);
+}
+
+/// The wait that a Retry-After header asks for, in seconds. The header is a number of seconds or an HTTP date, which is always in
+/// GMT and in English. Gives nothing when it can't be read, or when it doesn't ask for a wait.
+inline std::optional<qint64> retryAfterSeconds(const QByteArray& header, const QDateTime& now = QDateTime::currentDateTimeUtc())
+{
+    const auto value = header.trimmed();
+    qint64 seconds = 0;
+    if (value.endsWith("GMT")) {
+        auto date = QLocale::c().toDateTime(QString::fromUtf8(value), "ddd, dd MMM yyyy HH:mm:ss 'GMT'");
+        if (!date.isValid()) {
+            return std::nullopt;
+        }
+        // the format has no zone, so the date was read as local time
+        date.setTimeZone(QTimeZone::UTC);
+        seconds = now.secsTo(date);
+    } else {
+        bool ok = false;
+        seconds = value.toLongLong(&ok);
+        if (!ok) {
+            return std::nullopt;
+        }
+    }
+    if (seconds <= 0) {
+        return std::nullopt;
+    }
+    return seconds;
 }
 }  // namespace Net
