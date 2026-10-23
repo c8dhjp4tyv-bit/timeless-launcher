@@ -50,10 +50,20 @@ JavaChecker::JavaChecker(QString path, QString args, int minMem, int maxMem, int
 
 void JavaChecker::executeTask()
 {
-    QString checkerJar = JavaUtils::getJavaCheckPath();
+    QString checkerJar = m_checkerJar ? *m_checkerJar : JavaUtils::getJavaCheckPath();
 
     if (checkerJar.isEmpty()) {
+        // The task has to end, or whoever waits for the check (the detection of Java installations waits for every one of them) waits
+        // for ever.
         qDebug() << "Java checker library could not be found. Please check your installation.";
+        Result result = {
+            .path = m_path,
+            .id = m_id,
+        };
+        result.errorLog = tr("Java checker library could not be found. Please check your installation.");
+        result.validity = Result::Validity::Errored;
+        emit checkFinished(result);
+        emitSucceeded();
         return;
     }
 #ifdef Q_OS_WIN

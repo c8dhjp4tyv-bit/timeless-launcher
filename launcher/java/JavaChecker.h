@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <optional>
 
 #include <QProcess>
 #include <QTimer>
@@ -29,6 +30,10 @@ class JavaChecker : public Task {
     explicit JavaChecker(QString path, QString args, int minMem = 0, int maxMem = 0, int permGen = 0, int id = 0);
     ~JavaChecker() override = default;
 
+    /// The jar that does the checking. When it isn't set the one that comes with the launcher is used; an empty path is a jar that
+    /// can't be found.
+    void setCheckerJar(QString path) { m_checkerJar = std::move(path); }
+
    signals:
     void checkFinished(const Result& result);
 
@@ -41,6 +46,7 @@ class JavaChecker : public Task {
     QString m_stdout;
     QString m_stderr;
 
+    std::optional<QString> m_checkerJar;
     QString m_path;
     QString m_args;
     int m_minMem = 0;

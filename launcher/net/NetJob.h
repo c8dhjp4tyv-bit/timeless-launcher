@@ -61,6 +61,9 @@ class NetJob : public ConcurrentTask {
     auto addNetAction(Net::Request::Ptr action) -> bool;
 
     auto getFailedActions() -> QList<Net::Request*>;
+    /// The HTTP status of the first request that failed, or -1 when none did (a job can fail without a request having failed, as when
+    /// it can't be aborted).
+    auto firstFailedStatusCode() -> int;
     auto getFailedFiles() -> QList<QString>;
     void setAskRetry(bool askRetry);
 

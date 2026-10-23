@@ -64,9 +64,7 @@ Task::Ptr ResourceAPI::searchProjects(const SearchArgs& args, const Callback<QLi
     QObject::connect(netJob.get(), &NetJob::failed, netJob.get(), [weak, callbacks](const QString& reason) {
         int networkErrorCode = -1;
         if (auto netJob = weak.lock()) {
-            if (auto* failedAction = netJob->getFailedActions().at(0); failedAction) {
-                networkErrorCode = failedAction->replyStatusCode();
-            }
+            networkErrorCode = netJob->firstFailedStatusCode();
         }
         callbacks.onFail(reason, networkErrorCode);
     });
@@ -142,9 +140,7 @@ Task::Ptr ResourceAPI::getProjectVersions(const VersionSearchArgs& args,
     QObject::connect(netJob.get(), &NetJob::failed, netJob.get(), [weak, callbacks](const QString& reason) {
         int networkErrorCode = -1;
         if (auto netJob = weak.lock()) {
-            if (auto* failedAction = netJob->getFailedActions().at(0); failedAction) {
-                networkErrorCode = failedAction->replyStatusCode();
-            }
+            networkErrorCode = netJob->firstFailedStatusCode();
         }
         callbacks.onFail(reason, networkErrorCode);
     });
@@ -194,9 +190,7 @@ Task::Ptr ResourceAPI::getProjectInfo(const ProjectInfoArgs& args,
         int networkErrorCode = -1;
         if (auto job = weak.lock()) {
             if (auto netJob = qSharedPointerDynamicCast<NetJob>(job)) {
-                if (auto* failedAction = netJob->getFailedActions().at(0); failedAction) {
-                    networkErrorCode = failedAction->replyStatusCode();
-                }
+                networkErrorCode = netJob->firstFailedStatusCode();
             }
         }
         callbacks.onFail(reason, networkErrorCode);
@@ -278,9 +272,7 @@ Task::Ptr ResourceAPI::getDependencyVersion(const DependencySearchArgs& args, co
     QObject::connect(netJob.get(), &NetJob::failed, netJob.get(), [weak, callbacks](const QString& reason) {
         int networkErrorCode = -1;
         if (auto netJob = weak.lock()) {
-            if (auto* failedAction = netJob->getFailedActions().at(0); failedAction) {
-                networkErrorCode = failedAction->replyStatusCode();
-            }
+            networkErrorCode = netJob->firstFailedStatusCode();
         }
         callbacks.onFail(reason, networkErrorCode);
     });
