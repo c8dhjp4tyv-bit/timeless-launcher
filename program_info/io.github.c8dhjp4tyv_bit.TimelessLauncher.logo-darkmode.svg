@@ -1,36 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">Timeless Launcher</title>
-  <desc id="desc">A clock mark representing reliable Minecraft instance management.</desc>
+  <desc id="desc">A block with clock hands on its corner, for keeping Minecraft instances reliable over time.</desc>
   <defs>
-    <linearGradient id="background" x1="24" y1="24" x2="232" y2="232" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#172554"/>
-      <stop offset="1" stop-color="#0f766e"/>
-    </linearGradient>
-    <linearGradient id="face" x1="72" y1="56" x2="184" y2="200" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f8fafc"/>
-      <stop offset="1" stop-color="#dbeafe"/>
-    </linearGradient>
+    <radialGradient id="background" cx="128" cy="128" r="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#0b1020"/>
+    </radialGradient>
   </defs>
   <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#background)"/>
-  <circle cx="128" cy="128" r="82" fill="#020617" opacity="0.2"/>
-  <circle cx="128" cy="120" r="78" fill="url(#face)" stroke="#ffffff" stroke-width="8"/>
-  <g stroke="#172554" stroke-width="7" stroke-linecap="round">
-    <path d="M128 57v13"/>
-    <path d="M128 170v13"/>
-    <path d="m65 120 13 0"/>
-    <path d="m178 120 13 0"/>
+  <polygon points="128,44 204,88 128,132 52,88" fill="#99f6e4"/>
+  <polygon points="52,88 128,132 128,220 52,176" fill="#14b8a6"/>
+  <polygon points="204,88 128,132 128,220 204,176" fill="#0f766e"/>
+  <polygon points="128,44 204,88 204,176 128,220 52,176 52,88" fill="none" stroke="#020617" stroke-width="5" stroke-linejoin="round" opacity="0.6"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M128 132V84M128 132l40 25" stroke="#0b1b3a" stroke-width="22"/>
+    <path d="M128 132V84M128 132l40 25" stroke="#fbbf24" stroke-width="12"/>
   </g>
-  <g stroke="#334155" stroke-width="4" stroke-linecap="round" opacity="0.72">
-    <path d="m83 75 7 10"/>
-    <path d="m173 75-7 10"/>
-    <path d="m83 165 7-10"/>
-    <path d="m173 165-7-10"/>
-  </g>
-  <path d="M128 120V82" fill="none" stroke="#172554" stroke-width="10" stroke-linecap="round"/>
-  <path d="m128 120 34 22" fill="none" stroke="#172554" stroke-width="10" stroke-linecap="round"/>
-  <circle cx="128" cy="120" r="12" fill="#f59e0b" stroke="#172554" stroke-width="6"/>
-  <path d="m200 45 5 12 12 5-12 5-5 12-5-12-12-5 12-5z" fill="#fbbf24"/>
+  <circle cx="128" cy="132" r="13" fill="#fbbf24" stroke="#0b1b3a" stroke-width="7"/>
   <metadata>
     <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
       <cc:Work rdf:about="">
